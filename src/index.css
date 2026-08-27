@@ -1,0 +1,190 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Teal is the interface colour. The subject here is what an insurer keeps,
+     not a fire to retire on, and the palette says so: cooler than the twin
+     simulator, and far enough from both verdict colours to dress the chrome —
+     header, links, controls, the leading curve — without ever being read as an
+     answer. */
+  --color-brand-50: #eefaf9;
+  --color-brand-100: #d3f2ef;
+  --color-brand-200: #a7e5e0;
+  --color-brand-300: #6fcfc9;
+  --color-brand-400: #38b2ac;
+  --color-brand-500: #199691;
+  --color-brand-600: #0f7873;
+  --color-brand-700: #0f5f5c;
+  --color-brand-800: #114c4a;
+  --color-brand-900: #123f3e;
+
+  --color-ink-50: #f8f8fa;
+  --color-ink-100: #f0f0f4;
+  --color-ink-200: #e2e2ea;
+  --color-ink-300: #c4c4d1;
+  --color-ink-400: #9494a6;
+  --color-ink-500: #6b6b80;
+  --color-ink-600: #525266;
+  --color-ink-700: #404052;
+  --color-ink-800: #2a2a38;
+  --color-ink-900: #191924;
+
+  /* Spent on one statement only: whether a contract comes out ahead of the
+     field or behind it. Green and red are the two colours a reader already
+     knows how to read without a legend, so they are never used for decoration,
+     and never left to carry the meaning alone — the figure beside them always
+     says it in words. */
+  --color-jade-50: #eefaf4;
+  --color-jade-100: #d5f2e4;
+  --color-jade-200: #ade4cb;
+  --color-jade-500: #1e9970;
+  --color-jade-600: #0f7b5a;
+  --color-jade-700: #0c624a;
+  --color-jade-800: #0b4e3c;
+
+  --color-brique-50: #fdf2f5;
+  --color-brique-100: #fbdfe7;
+  --color-brique-200: #f2bccc;
+  --color-brique-500: #c62348;
+  --color-brique-600: #a5153a;
+  --color-brique-700: #871030;
+  --color-brique-800: #6b0e28;
+
+  /* The euro pocket against the unit-linked one, wherever the two are drawn
+     side by side. Neither is good news nor bad, so neither gets a verdict
+     colour. */
+  --color-azur-100: #e2edf8;
+  --color-azur-500: #4a7fc1;
+  --color-azur-600: #35619b;
+
+  --color-ambre-100: #fdf0d5;
+  --color-ambre-500: #d99b21;
+  --color-ambre-700: #96650d;
+
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --radius-card: 1.25rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* An animation nobody asked for is noise at best. The jump stays, the
+     movement goes. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  body {
+    @apply bg-ink-50 text-ink-900 font-sans antialiased;
+  }
+
+  /* Every figure on the page is meant to be compared with the one above it.
+     Proportional digits make columns of euros wander; tabular ones do not. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-[var(--radius-card)] border border-ink-200/70 bg-white;
+    box-shadow:
+      0 1px 2px rgb(25 25 36 / 0.04),
+      0 8px 24px -12px rgb(25 25 36 / 0.14);
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-sm font-medium text-ink-700;
+  }
+
+  .field-hint {
+    @apply mt-1.5 text-xs leading-relaxed text-ink-400;
+  }
+}
+
+/* --- Impression ---------------------------------------------------------- */
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* --- Slider -------------------------------------------------------------- */
+
+input[type='range'].brand-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range'].brand-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--range-track, var(--color-ink-200));
+}
+
+input[type='range'].brand-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-ink-200);
+}
+
+input[type='range'].brand-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-brand-500);
+}
+
+input[type='range'].brand-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 24px;
+  width: 24px;
+  margin-top: -9px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--color-brand-500);
+  box-shadow: 0 2px 6px rgb(25 25 36 / 0.2);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+input[type='range'].brand-range::-moz-range-thumb {
+  height: 22px;
+  width: 22px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--color-brand-500);
+  box-shadow: 0 2px 6px rgb(25 25 36 / 0.2);
+}
+
+input[type='range'].brand-range:hover::-webkit-slider-thumb {
+  transform: scale(1.08);
+}
+
+input[type='range'].brand-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px var(--color-brand-100);
+}
+
+input[type='range'].brand-range:focus-visible {
+  outline: none;
+}
