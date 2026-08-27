@@ -16,13 +16,21 @@
  *  - **The allowance bites on income tax and never on social levies.** €4,600
  *    (€9,200 for a couple) comes off the base for the 7,5 %, while the 17,2 %
  *    is charged on the gain in full. This is the classic mistake.
- *  - **Social levies already paid on the euro fund are not paid twice.** They
- *    are taken every year on that pocket's interest, withdrawal or no
- *    withdrawal, so the settlement only owes the difference — and that
- *    difference is **allowed to be negative**. A negative figure is not a bug:
- *    it is the real refund an insurer makes when the unit-linked pocket lost
- *    enough for the policy's overall gain to fall short of what was already
- *    levied. Clamping it at zero would quietly penalise every mixed policy.
+ *  - **Social levies already paid on the euro fund are not paid twice — and the
+ *    settlement compares like with like.** They are taken every year on that
+ *    pocket's interest, withdrawal or no withdrawal, so the settlement only
+ *    owes what has never been levied. The subtlety, and it was got wrong here
+ *    once: the yearly levy is charged on the interest *credited*, while the
+ *    gain a policy finally shows is already *net* of those levies. Netting the
+ *    second against the first hands back 17,2 % of every levy ever taken — a
+ *    small, systematic refund that no insurer makes, and which stayed invisible
+ *    for as long as income tax was there to swallow the sign. The base is
+ *    therefore reconstituted gross before anything is compared to it.
+ *  - **A genuine refund is still allowed, and is not clamped away.** When the
+ *    unit-linked pocket sinks far enough that the policy's whole gain falls
+ *    short of what the euro pocket was already levied on, the insurer really
+ *    does refund the difference. That refund cannot exceed what was taken, and
+ *    the formula bounds it there on its own rather than by a `Math.max`.
  *  - **Entry fees do not reduce the taxable base.** Premiums count gross, so a
  *    front-end load is paid twice over: once in capital that was never
  *    invested, once in tax on a gain it prevented. Association dues are not a
@@ -95,9 +103,43 @@ export function tauxImpotRevenu(primes: number, anciennete: number): number {
   return TAUX_APRES_8_ANS * sousLeSeuil + TAUX_AVANT_8_ANS * (1 - sousLeSeuil);
 }
 
+/**
+ * The gain the exit social levy is actually owed on.
+ *
+ * Two corrections in one line, and both matter:
+ *
+ *  - **the gain is reconstituted gross.** `plusValue` is what the policy shows
+ *    *after* the euro pocket was levied year after year; adding those levies
+ *    back is what makes it comparable to the base they were charged on.
+ *  - **what has already been levied comes off the base, not off the tax.**
+ *    Subtracting the levies themselves would net a rate against an amount and
+ *    hand back a fraction of every levy ever taken.
+ *
+ * The result is signed on purpose. Negative means a refund is owed, and it
+ * cannot exceed what was taken: with a flat rate the worst case is a policy
+ * that gained nothing at all, which returns exactly `−assiettePSPayee`.
+ */
+export function assiettePSALaSortie(
+  plusValue: number,
+  psDejaPayes: number,
+  assiettePSPayee: number,
+): number {
+  const gainBrut = plusValue + psDejaPayes;
+  return Math.max(0, gainBrut) - Math.max(0, assiettePSPayee);
+}
+
 export type Imposition = {
-  /** The gain contained in the withdrawal. */
+  /** The gain contained in the withdrawal, and the base income tax is charged on. */
   assiette: number;
+  /**
+   * The base the exit social levy is charged on: the gain never yet levied.
+   *
+   * A second base and not a second rate, because it is genuinely a different
+   * quantity from `assiette` — one is net of the yearly levies and the other is
+   * not. Reporting it is what lets a reader check the settlement rather than
+   * take it on faith.
+   */
+  assiettePS: number;
   /** What the allowance actually shelters, never more than the base itself. */
   abattement: number;
   /** Blended, when premiums straddle the €150,000 threshold. */
@@ -117,8 +159,10 @@ export function imposer(args: {
   foyer: Foyer;
   /** Social levies already taken, year after year, on the euro pocket. */
   psDejaPayes: number;
+  /** The interest those levies were charged on, gross. Not the levies themselves. */
+  assiettePSPayee: number;
 }): Imposition {
-  const { rachat, valeur, primes, anciennete, foyer, psDejaPayes } = args;
+  const { rachat, valeur, primes, anciennete, foyer, psDejaPayes, assiettePSPayee } = args;
   const plusValue = valeur - primes;
   const assiette = assietteRachat(rachat, valeur, plusValue);
 
@@ -128,11 +172,15 @@ export function imposer(args: {
   const tauxApplique = tauxImpotRevenu(primes, anciennete);
   const impotRevenu = Math.max(0, assiette - abattement) * tauxApplique;
 
-  // Deliberately not clamped at zero — see the header.
-  const prelevementsSociaux = PRELEVEMENTS_SOCIAUX * assiette - psDejaPayes;
+  // A settlement figure, and deliberately not prorated by the share withdrawn:
+  // the refund the negative branch describes happens when the policy is wound
+  // up, not when a slice of it is taken.
+  const assiettePS = assiettePSALaSortie(plusValue, psDejaPayes, assiettePSPayee);
+  const prelevementsSociaux = PRELEVEMENTS_SOCIAUX * assiettePS;
 
   return {
     assiette,
+    assiettePS,
     abattement,
     tauxApplique,
     impotRevenu,
@@ -161,12 +209,15 @@ export function imposerDeces(args: {
   valeur: number;
   primes: number;
   psDejaPayes: number;
+  assiettePSPayee: number;
 }): Imposition {
-  const { valeur, primes, psDejaPayes } = args;
-  const assiette = assietteRachat(valeur, valeur, valeur - primes);
-  const prelevementsSociaux = PRELEVEMENTS_SOCIAUX * assiette - psDejaPayes;
+  const { valeur, primes, psDejaPayes, assiettePSPayee } = args;
+  const plusValue = valeur - primes;
+  const assiettePS = assiettePSALaSortie(plusValue, psDejaPayes, assiettePSPayee);
+  const prelevementsSociaux = PRELEVEMENTS_SOCIAUX * assiettePS;
   return {
-    assiette,
+    assiette: assietteRachat(valeur, valeur, plusValue),
+    assiettePS,
     abattement: 0,
     tauxApplique: 0,
     impotRevenu: 0,

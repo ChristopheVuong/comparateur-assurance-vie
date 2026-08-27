@@ -725,3 +725,95 @@ describe('the seventieth birthday', () => {
     expect(ecartAge).toBeGreaterThan(Math.abs(ecartContrats));
   });
 });
+
+/**
+ * The social levies, settled against the base they were charged on.
+ *
+ * The correction these guard was invisible for as long as income tax sat on top
+ * of it: on a euro-only plan the settlement handed back 17,2 % of every levy
+ * ever taken, because it compared a gain already net of those levies to the
+ * gross interest they were charged on. It surfaced the day a death benefit —
+ * which owes no income tax at all — started reporting a net above its own
+ * gross.
+ */
+describe('the social levies at settlement', () => {
+  it('owes nothing more when every euro of gain was already levied', () => {
+    // A euro-only plan on a contract that withholds nothing on the way in and
+    // locks nothing away: the yearly levies have already covered the whole
+    // gain, so the settlement owes exactly zero. This used to hand back 17,2 %
+    // of every levy ever taken.
+    const nets = CONTRATS.filter(
+      (c) =>
+        c.fraisVersement.euros === 0 &&
+        c.droitsAdhesion === 0 &&
+        !c.fondsEuros.some((f) => f.provisionFidelite),
+    );
+    expect(nets.length).toBeGreaterThan(0);
+    for (const denouement of ['rachat', 'deces'] as const) {
+      for (const horizon of [1, 5, 8, 20, 40]) {
+        for (const c of nets) {
+          const r = projeterContrat(
+            sur({ partUC: 0, horizon, denouement, rebalancement: 'aucun' }),
+            c,
+          );
+          if (!r.accessible) continue;
+          expect(Math.abs(r.imposition.prelevementsSociaux)).toBeLessThan(
+            1e-6 * Math.max(1, r.valeurBrute),
+          );
+        }
+      }
+    }
+  });
+
+  it('hands a little back where an entry fee shrank the gain it never levied', () => {
+    // Not a leftover of the defect but a real consequence of the rule: the
+    // taxable gain is measured against *gross* premiums, so money withheld on
+    // the way in lowers the gain without ever having been levied. The exit
+    // settles the difference, and it settles it as a refund.
+    const r = projeterContrat(
+      sur({ partUC: 0, horizon: 20, rebalancement: 'aucun' }),
+      contrat('afer-multisupport'),
+    );
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    expect(r.imposition.prelevementsSociaux).toBeLessThan(0);
+    // Small, and bounded by what the entry actually cost.
+    expect(-r.imposition.prelevementsSociaux).toBeLessThan(r.coutsPreleves.versement);
+  });
+
+  it('levies the fidelity reserve when it is attributed, and not before', () => {
+    const r = projeterContrat(
+      sur({ partUC: 0, horizon: 20, rebalancement: 'aucun' }),
+      contrat('afer-generation'),
+    );
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    // Nothing was levied along the way, because nothing was acquired.
+    expect(r.psPayes).toBeCloseTo(0, 9);
+    // And the whole gain meets the levy at the settlement, reserve included.
+    expect(r.imposition.assiettePS).toBeCloseTo(r.plusValue, 6);
+    expect(r.imposition.prelevementsSociaux).toBeGreaterThan(0);
+  });
+
+  it('never hands back more than it took', () => {
+    for (const { r } of TOUTES) {
+      expect(r.imposition.prelevementsSociaux).toBeGreaterThanOrEqual(-r.psPayes - 1e-6);
+    }
+  });
+
+  it('never settles a policy above its value by more than the levies it returns', () => {
+    // What made the defect visible: a death benefit reporting a net above its
+    // own gross. A refund can still put it there — legitimately — but never by
+    // more than what was levied in the first place.
+    const verifier = (r: ResultatAccessible) => {
+      expect(r.capitalNet - r.valeurBrute).toBeLessThanOrEqual(r.psPayes + 1e-6);
+    };
+    for (const { r } of TOUTES) verifier(r);
+    for (const h of GRILLE.slice(0, 24)) {
+      for (const c of CONTRATS) {
+        const r = projeterContrat({ ...h, denouement: 'deces' }, c);
+        if (r.accessible) verifier(r);
+      }
+    }
+  });
+});

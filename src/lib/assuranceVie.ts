@@ -916,6 +916,10 @@ export function projeterContrat(
   let pocheU = 0;
   let provision = 0;
   let psPayes = 0;
+  // The interest those levies were charged on, and not the levies themselves.
+  // The settlement needs the base rather than the tax: netting a rate against
+  // an amount is exactly the mistake `assiettePSALaSortie` exists to prevent.
+  let assiettePSPayee = 0;
   let primes = 0;
   // Tracked in the loop rather than derived afterwards: the split depends on
   // the year each payment fell in, and once the loop has run that information
@@ -1014,9 +1018,11 @@ export function projeterContrat(
     // ⑥ Social levies, on the acquired share only — what sits in the provision
     //    is not yours yet, so it is not levied yet. That rule falls out of
     //    `partProvisionnee` without a field of its own.
-    const ps = PRELEVEMENTS_SOCIAUX * Math.max(0, acquis);
+    const assiettePS = Math.max(0, acquis);
+    const ps = PRELEVEMENTS_SOCIAUX * assiettePS;
     pocheE -= ps;
     psPayes += ps;
+    assiettePSPayee += assiettePS;
 
     // ⑦ Rebalancing, last, so the year closes on the target and the drift
     //    measured during it is real rather than an artefact of ordering.
@@ -1113,7 +1119,12 @@ export function projeterContrat(
   // rather than on the age of the policy.
   const imposition =
     h.denouement === 'deces'
-      ? imposerDeces({ valeur: valeurBrute, primes, psDejaPayes: psPayes })
+      ? imposerDeces({
+          valeur: valeurBrute,
+          primes,
+          psDejaPayes: psPayes,
+          assiettePSPayee,
+        })
       : imposer({
           rachat: valeurBrute,
           valeur: valeurBrute,
@@ -1121,6 +1132,7 @@ export function projeterContrat(
           anciennete: h.horizon,
           foyer: h.foyer,
           psDejaPayes: psPayes,
+          assiettePSPayee,
         });
   couts.fiscalite = imposition.total + psPayes;
 

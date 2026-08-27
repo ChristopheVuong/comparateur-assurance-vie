@@ -19,8 +19,20 @@ const cas = (sur: Partial<Parameters<typeof imposer>[0]> = {}) =>
     anciennete: 20,
     foyer: 'seul',
     psDejaPayes: 0,
+    assiettePSPayee: 0,
     ...sur,
   });
+
+/**
+ * A coherent pair: the levies taken, and the interest they were taken on.
+ *
+ * Passing one without the other is what the settlement got wrong, so the tests
+ * below never write either by hand.
+ */
+const leve = (assiette: number) => ({
+  psDejaPayes: PRELEVEMENTS_SOCIAUX * assiette,
+  assiettePSPayee: assiette,
+});
 
 describe('the gain contained in a withdrawal', () => {
   it('is the whole gain on a full surrender', () => {
@@ -107,26 +119,66 @@ describe('what is owed on a full surrender', () => {
     expect(r.impotRevenu).toBe(0);
   });
 
-  it('credits the levies already taken on the euro pocket, once and only once', () => {
-    const r = cas({ psDejaPayes: 5_000 });
-    expect(r.prelevementsSociaux).toBeCloseTo(17_200 - 5_000, 6);
+  it('credits what has already been levied by taking it off the base, not the tax', () => {
+    // €40,000 of euro interest was levied along the way, and the policy shows a
+    // €100,000 gain *after* those levies. The gain never levied is therefore
+    // 100,000 + 6,880 − 40,000, and that is what the settlement owes on.
+    const deja = leve(40_000);
+    const r = cas(deja);
+    const gainBrut = 100_000 + deja.psDejaPayes;
+    expect(r.assiettePS).toBeCloseTo(gainBrut - 40_000, 6);
+    expect(r.prelevementsSociaux).toBeCloseTo(PRELEVEMENTS_SOCIAUX * (gainBrut - 40_000), 6);
+  });
+
+  it('owes nothing more when the whole gain came from the pocket already levied', () => {
+    // The regression this correction exists for. A policy holding only a euro
+    // fund has been levied on every euro it ever earned, so the settlement owes
+    // exactly zero — and used to hand back 17,2 % of every levy ever taken,
+    // because it compared a gain net of those levies to the base they were
+    // charged on.
+    for (const interets of [1_000, 25_000, 100_000]) {
+      const deja = leve(interets);
+      // What the policy shows is the interest minus the levies already taken.
+      const valeur = 200_000 + interets - deja.psDejaPayes;
+      const r = cas({ rachat: valeur, valeur, ...deja });
+      expect(r.assiettePS).toBeCloseTo(0, 6);
+      expect(r.prelevementsSociaux).toBeCloseTo(0, 6);
+    }
   });
 
   it('refunds when more was levied than the policy finally gained', () => {
     // The euro pocket paid levies year after year while the unit-linked pocket
     // sank. The settlement owes a refund, and a negative figure here is the
     // right answer rather than a bug to clamp away.
-    const r = cas({ valeur: 210_000, psDejaPayes: 4_000 });
-    expect(r.prelevementsSociaux).toBeCloseTo(10_000 * PRELEVEMENTS_SOCIAUX - 4_000, 6);
+    const deja = leve(40_000);
+    const r = cas({ valeur: 210_000, ...deja });
     expect(r.prelevementsSociaux).toBeLessThan(0);
+    expect(r.prelevementsSociaux).toBeCloseTo(
+      PRELEVEMENTS_SOCIAUX * (10_000 + deja.psDejaPayes - 40_000),
+      6,
+    );
   });
 
-  it('closes: levies paid plus levies owed equal the levy on the whole gain', () => {
+  it('never refunds more than was taken, however badly the policy did', () => {
+    const deja = leve(40_000);
+    for (const valeur of [200_000, 150_000, 100_000, 0]) {
+      const r = cas({ rachat: valeur, valeur, ...deja });
+      expect(r.prelevementsSociaux).toBeGreaterThanOrEqual(-deja.psDejaPayes - 1e-6);
+    }
+    // The bound is reached exactly when the policy ends up having gained
+    // nothing at all, gross: everything taken comes back, and not a euro more.
+    const rien = cas({ rachat: 200_000 - deja.psDejaPayes, valeur: 200_000 - deja.psDejaPayes, ...deja });
+    expect(rien.prelevementsSociaux).toBeCloseTo(-deja.psDejaPayes, 6);
+  });
+
+  it('closes: levies paid plus levies owed equal the levy on the whole gross gain', () => {
     for (const valeur of [180_000, 200_000, 240_000, 300_000, 1_000_000]) {
-      for (const psDejaPayes of [0, 1_000, 20_000]) {
-        const r = cas({ rachat: valeur, valeur, psDejaPayes });
-        const attendu = PRELEVEMENTS_SOCIAUX * Math.max(0, valeur - 200_000);
-        expect(psDejaPayes + r.prelevementsSociaux).toBeCloseTo(attendu, 6);
+      for (const assiettePSPayee of [0, 5_000, 40_000]) {
+        const deja = leve(assiettePSPayee);
+        const r = cas({ rachat: valeur, valeur, ...deja });
+        const gainBrut = valeur - 200_000 + deja.psDejaPayes;
+        const attendu = PRELEVEMENTS_SOCIAUX * Math.max(0, gainBrut);
+        expect(deja.psDejaPayes + r.prelevementsSociaux).toBeCloseTo(attendu, 6);
       }
     }
   });
