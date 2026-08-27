@@ -77,32 +77,45 @@ export function BarreFrais({
   );
 
   return (
-    <svg
-      viewBox="0 0 100 8"
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={phrase}
-      className="mt-1.5 ml-auto block h-1.5 w-24"
-    >
-      <title>{phrase}</title>
-      <clipPath id={`barre-${cle}`}>
-        <rect x="0" y="0" width="100" height="8" rx="4" />
-      </clipPath>
-      <rect x="0" y="0" width="100" height="8" rx="4" fill="var(--color-ink-100)" />
-      <g clipPath={`url(#barre-${cle})`}>
-        {segments.map((s) => (
-          <rect
-            key={s.poste}
-            x={s.x}
-            y="0"
-            width={Math.max(0, s.largeur)}
-            height="8"
-            fill={COULEURS[s.poste]}
-          />
-        ))}
-      </g>
-      {/* Past the rail. The exact rate is printed above, so nothing is lost. */}
-      {deborde && <path d="M 97 1 L 100 4 L 97 7 Z" fill="var(--color-ink-500)" />}
-    </svg>
+    // A CSS tooltip rather than the SVG `<title>` element it replaced. The
+    // native one is a browser-timed hover hint: it only fires after a pause
+    // whose length is not this page's to set, and the bar it sat on is 6px
+    // tall — a target too thin to land on reliably, so the tooltip felt like
+    // it "sometimes" worked. `group-hover` shows the same sentence the moment
+    // the pointer enters the padded box below, every time.
+    <div className="group relative mt-1.5 ml-auto w-24 cursor-help py-1.5">
+      <svg
+        viewBox="0 0 100 8"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={phrase}
+        className="block h-1.5 w-24"
+      >
+        <clipPath id={`barre-${cle}`}>
+          <rect x="0" y="0" width="100" height="8" rx="4" />
+        </clipPath>
+        <rect x="0" y="0" width="100" height="8" rx="4" fill="var(--color-ink-100)" />
+        <g clipPath={`url(#barre-${cle})`}>
+          {segments.map((s) => (
+            <rect
+              key={s.poste}
+              x={s.x}
+              y="0"
+              width={Math.max(0, s.largeur)}
+              height="8"
+              fill={COULEURS[s.poste]}
+            />
+          ))}
+        </g>
+        {/* Past the rail. The exact rate is printed above, so nothing is lost. */}
+        {deborde && <path d="M 97 1 L 100 4 L 97 7 Z" fill="var(--color-ink-500)" />}
+      </svg>
+      <div
+        role="tooltip"
+        className="pointer-events-none absolute right-0 bottom-full z-20 mb-1 w-56 rounded-lg bg-ink-900 px-2.5 py-2 text-left text-[11px] leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+      >
+        {phrase}
+      </div>
+    </div>
   );
 }

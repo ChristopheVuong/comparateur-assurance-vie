@@ -139,3 +139,8 @@ volontairement.
 
 Site statique déployé sur GitHub Pages via GitHub Actions (`.github/workflows/deploy.yml`) :
 lint, tests et build sur chaque push, déploiement sur `main`.
+
+## Crédits
+
+Design inspiré de [fire-simulator](https://github.com/Commutator-IO/fire-simulator),
+par mycaule ([mycaule](https://github.com/mycaule)).

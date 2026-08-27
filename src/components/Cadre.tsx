@@ -53,6 +53,27 @@ export function Pied() {
           Aucune donnée ne quitte votre navigateur : tout le calcul se fait sur cette page, et
           l’adresse est le seul endroit où votre plan est écrit.
         </p>
+        <p className="mt-2">
+          Design inspiré de{' '}
+          <a
+            href="https://github.com/Commutator-IO/fire-simulator"
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-ink-300 underline-offset-2 transition hover:text-ink-600"
+          >
+            fire-simulator
+          </a>
+          , par{' '}
+          <a
+            href="https://github.com/mycaule"
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-ink-300 underline-offset-2 transition hover:text-ink-600"
+          >
+            Michel Hua
+          </a>
+          .
+        </p>
       </div>
     </footer>
   );
