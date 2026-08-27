@@ -41,9 +41,17 @@ import {
   PRELEVEMENTS_SOCIAUX,
   estFoyer,
   imposer,
+  imposerDeces,
   type Foyer,
   type Imposition,
 } from './fiscalite';
+import {
+  ABATTEMENT_990I,
+  AGE_PIVOT,
+  TAUX_DROITS_DEFAUT,
+  imposerSuccession,
+  type Succession,
+} from './succession';
 import {
   ANNEE_REFERENCE,
   CONTRATS,
@@ -90,6 +98,28 @@ export type Rebalancement = 'aucun' | 'versements' | 'annuel';
 /** Which euro-fund rate is carried forward over the whole horizon. */
 export type SourceTaux = 'derniere-annee' | 'moyenne-historique';
 
+/**
+ * How the policy ends at the horizon — and it ends, one way or the other.
+ *
+ * Not a detail of the settlement but a fork in what the plan *is for*, and the
+ * two branches disagree about almost everything that happens on the last day:
+ *
+ *  - `rachat` — the saver surrenders the policy and spends the money. Income
+ *    tax on the gain, the eight-year allowance, and any fidelity reserve not
+ *    yet acquired is forfeited.
+ *  - `deces` — the policy is settled to the beneficiaries. **The gain never
+ *    meets income tax at all**; succession duties take its place, on a rule
+ *    that turns on the saver's age at each payment rather than on the age of
+ *    the policy. A fidelity reserve is handed over rather than forfeited,
+ *    though without the uplift only the term earns.
+ *
+ * Modelled as a dimension of the plan and not as a second simulator, because
+ * every figure before the last day is identical: the same fees, on the same
+ * pockets, for the same years. Splitting it in two would have duplicated the
+ * engine to change its final paragraph.
+ */
+export type Denouement = 'rachat' | 'deces';
+
 export type Hypotheses = {
   /** V₀ — initial payment, in euros. Weighed against each contract's ticket. */
   versementInitial: number;
@@ -131,6 +161,30 @@ export type Hypotheses = {
   rebalancement: Rebalancement;
   /** Decides the €4,600 / €9,200 allowance on withdrawal after eight years. */
   foyer: Foyer;
+  denouement: Denouement;
+  /**
+   * Age of the assured on the first payment.
+   *
+   * Read only when the policy ends in a death, and then it decides more than
+   * any fee in the catalogue: it places every payment on one side or the other
+   * of the seventieth birthday, and with it an allowance of €152,500 per
+   * beneficiary or one of €30,500 for everybody together.
+   *
+   * Carried even under `rachat`, where it changes no figure, because a field
+   * that appears and disappears with another one is a field that arrives
+   * undefined in a link somebody shared before the switch existed.
+   */
+  ageSouscription: number;
+  /** How many people share the death benefit — and therefore how many allowances. */
+  beneficiaires: number;
+  /**
+   * Marginal succession rate assumed for premiums paid after seventy.
+   *
+   * A hypothesis and not a computation: what those premiums actually cost
+   * depends on the relationship to the deceased and on the rest of the estate,
+   * neither of which is a property of an insurance contract. See `succession.ts`.
+   */
+  tauxDroitsSuccession: number;
 };
 
 export const BORNES = {
@@ -145,6 +199,11 @@ export const BORNES = {
   horizon: { min: 1, max: 40 },
   partUC: { min: 0, max: 1 },
   rendementUC: { min: -0.05, max: 0.15 },
+  // Wide enough to cover a policy opened for a child and one opened at ninety,
+  // because both exist and both sit on the interesting side of the pivot.
+  ageSouscription: { min: 0, max: 95 },
+  beneficiaires: { min: 1, max: 10 },
+  tauxDroitsSuccession: { min: 0, max: 0.6 },
 } as const;
 
 export const DEFAUTS: Hypotheses = {
@@ -168,6 +227,15 @@ export const DEFAUTS: Hypotheses = {
   sourceTaux: 'derniere-annee',
   rebalancement: 'annuel',
   foyer: 'seul',
+  // The page opens on the question it was built to answer — what does this
+  // contract cost to hold — and a death benefit is a different question. It is
+  // one click away, not the greeting.
+  denouement: 'rachat',
+  // Old enough for the seventieth birthday to be inside a twenty-year horizon,
+  // so that switching to a death does not silently hide the rule that matters.
+  ageSouscription: 60,
+  beneficiaires: 1,
+  tauxDroitsSuccession: TAUX_DROITS_DEFAUT,
 };
 
 export const ECHEANCES: Record<Periodicite, number> = {
@@ -193,6 +261,11 @@ export const LIBELLES_REBALANCEMENT: Record<Rebalancement, string> = {
 export const LIBELLES_SOURCE_TAUX: Record<SourceTaux, string> = {
   'derniere-annee': `Taux servi en ${ANNEE_REFERENCE}`,
   'moyenne-historique': 'Moyenne des années connues',
+};
+
+export const LIBELLES_DENOUEMENT: Record<Denouement, string> = {
+  rachat: 'Vous récupérez l’argent',
+  deces: 'Vos bénéficiaires le reçoivent',
 };
 
 function borne(valeur: number, { min, max }: { min: number; max: number }): number {
@@ -230,7 +303,29 @@ export function borner(hypotheses: Hypotheses): Hypotheses {
         ? hypotheses.rebalancement
         : 'annuel',
     foyer: estFoyer(hypotheses.foyer) ? hypotheses.foyer : 'seul',
+    denouement: hypotheses.denouement === 'deces' ? 'deces' : 'rachat',
+    ageSouscription: Math.round(borne(hypotheses.ageSouscription, BORNES.ageSouscription)),
+    beneficiaires: Math.round(borne(hypotheses.beneficiaires, BORNES.beneficiaires)),
+    tauxDroitsSuccession: borne(
+      hypotheses.tauxDroitsSuccession,
+      BORNES.tauxDroitsSuccession,
+    ),
   };
+}
+
+/**
+ * Whether the payments of a given year were made before the seventieth
+ * birthday.
+ *
+ * One age for the whole year, and the pivot therefore falls on a year boundary
+ * rather than on an anniversary. That is a real approximation and it is stated
+ * as a reservation, but the alternative is worse: crediting instalments month
+ * by month to place them either side of a birthday would put a precision on the
+ * *date* of a payment that no other part of this engine claims — the whole
+ * projection credits a year's payments at its midpoint.
+ */
+export function avantSoixanteDix(h: Hypotheses, annee: number): boolean {
+  return h.ageSouscription + annee - 1 < AGE_PIVOT;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +424,17 @@ export type AnneeContrat = {
   /** Fidelity provision forfeited by arbitraging out of the euro pocket. */
   perteProvision: number;
   valeurFin: number;
+  /**
+   * What could actually be taken out at the close of this year, which is not
+   * `valeurFin` whenever a reserve is in play.
+   *
+   * The gap between the two is the single most misread number on a statement
+   * carrying a fidelity guarantee: the reserve is shown, it grows, and it is
+   * *not rachetable*. A saver reading `valeurFin` as their money is reading the
+   * insurer's liability, not their own liquidity — so the engine reports both
+   * and never makes anyone subtract.
+   */
+  valeurRachat: number;
   primesCumulees: number;
 };
 
@@ -341,6 +447,7 @@ export type CoutsPreleves = {
   arbitrage: number;
   provisionPerdue: number;
   fiscalite: number;
+  succession: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -393,7 +500,8 @@ export type GroupePoste =
   | 'encours'
   | 'arbitrage'
   | 'fidelite'
-  | 'fiscalite';
+  | 'fiscalite'
+  | 'succession';
 
 export const LIBELLES_GROUPE: Record<GroupePoste, string> = {
   entree: 'Frais sur versement et adhésion',
@@ -403,6 +511,7 @@ export const LIBELLES_GROUPE: Record<GroupePoste, string> = {
   arbitrage: 'Arbitrages',
   fidelite: 'Réserve de fidélité perdue',
   fiscalite: 'Impôt et prélèvements sociaux',
+  succession: 'Droits de succession',
 };
 
 /**
@@ -435,6 +544,12 @@ export const POSTES = {
   // contract costs. `cadence` answers one question only — does this compose the
   // yearly rate — and for tax the answer is no.
   fiscalite: { groupe: 'fiscalite', cadence: 'ponctuel', nature: 'impot' },
+  // A second tax line and not an addition to the first, because the two are
+  // mutually exclusive and answer to different rules: one is what the saver
+  // owes on a gain, the other what a beneficiary owes on a capital. Summing
+  // them into a single "impôt" would hide the fact that a death pays no income
+  // tax at all — which is the most useful thing the death branch has to say.
+  succession: { groupe: 'succession', cadence: 'ponctuel', nature: 'impot' },
 } as const satisfies Record<
   Poste,
   { groupe: GroupePoste; cadence: CadencePoste; nature: NaturePoste }
@@ -552,6 +667,17 @@ export type ResultatAccessible = {
   plusValue: number;
   partUCFinale: number;
   imposition: Imposition;
+  /**
+   * Succession duties, and `null` — not zero — when the plan ends in a
+   * withdrawal.
+   *
+   * The distinction is the point: zero would say "no duties were owed", which
+   * is a claim about a death that did not happen. `null` says the question was
+   * never asked, and it is what lets a panel decide whether to print the
+   * seventy-year rule at all instead of inferring it from an amount.
+   */
+  succession: Succession | null;
+  denouement: Denouement;
   psPayes: number;
   capitalNet: number;
   /**
@@ -581,6 +707,18 @@ export type ResultatAccessible = {
    * moved it. Telling whether a plan holds units at all needs the target.
    */
   partUCVisee: number;
+  /**
+   * The fidelity reserve standing at the horizon, before the settlement decides
+   * what becomes of it. Zero on every contract that has none.
+   */
+  provisionFin: number;
+  /** What that reserve was finally worth: uplifted, handed over, or forfeited. */
+  provisionAcquise: number;
+  /**
+   * What a full surrender would have released on the last day, reserve
+   * excluded — the liquidity figure, as opposed to the settlement figure.
+   */
+  valeurRachatFin: number;
   coutsPreleves: CoutsPreleves;
   /** The same plan on a contract with every fee at zero: the yardstick. */
   capitalNetSansFrais: number;
@@ -779,6 +917,10 @@ export function projeterContrat(
   let provision = 0;
   let psPayes = 0;
   let primes = 0;
+  // Tracked in the loop rather than derived afterwards: the split depends on
+  // the year each payment fell in, and once the loop has run that information
+  // is gone — `primes` is a single number by then.
+  let primesAvant70 = 0;
 
   const couts: CoutsPreleves = {
     versement: 0,
@@ -789,6 +931,7 @@ export function projeterContrat(
     arbitrage: 0,
     provisionPerdue: 0,
     fiscalite: 0,
+    succession: 0,
   };
 
   const annees: AnneeContrat[] = [];
@@ -802,6 +945,7 @@ export function projeterContrat(
     //    invested; they are not a premium, so they stay out of the tax base too.
     const brut = versementDeLAnnee(h, annee);
     primes += brut;
+    if (avantSoixanteDix(h, annee)) primesAvant70 += brut;
     const investissable = Math.max(0, brut - (annee === 1 ? c.droitsAdhesion : 0));
 
     // ② Split, then entry fees — strictly before any return.
@@ -930,15 +1074,27 @@ export function projeterContrat(
       fraisArbitrage,
       perteProvision,
       valeurFin: pocheE + pocheU + provision,
+      valeurRachat: pocheE + pocheU,
       primesCumulees: primes,
     });
   }
 
-  // Settlement.
+  // Settlement. Three events and not two: reaching the term, dying before it,
+  // and walking away before it are governed by three different clauses, and
+  // collapsing the last two is what makes a fidelity reserve look like a wager
+  // on the saver's health.
   let provisionAcquise = provision;
   if (provisionDe) {
     if (h.horizon >= provisionDe.termeAnnees) {
       provisionAcquise = provision * (1 + provisionDe.bonusAuTerme);
+    } else if (h.denouement === 'deces') {
+      // Handed to the beneficiaries, but without the uplift: that is owed to
+      // whoever reaches the term, and a death does not reach it. The shortfall
+      // is not a `provisionPerdue` either — nothing was taken, an upside was
+      // simply never earned, and calling it a penalty would double-count it
+      // against a fee-free yardstick that does not earn it either.
+      provisionAcquise = provisionDe.auDeces === 'acquise-sans-bonus' ? provision : 0;
+      if (provisionDe.auDeces === 'perdue') couts.provisionPerdue += provision;
     } else if (provisionDe.perteAvantTerme === 'totale') {
       couts.provisionPerdue += provision;
       provisionAcquise = 0;
@@ -951,17 +1107,38 @@ export function projeterContrat(
 
   const valeurBrute = pocheE + pocheU + provisionAcquise;
   const plusValue = valeurBrute - primes;
-  const imposition = imposer({
-    rachat: valeurBrute,
-    valeur: valeurBrute,
-    primes,
-    anciennete: h.horizon,
-    foyer: h.foyer,
-    psDejaPayes: psPayes,
-  });
+
+  // A death is not an income event: the gain never meets income tax, and what
+  // replaces it is a duty on the capital that turns on the age at each payment
+  // rather than on the age of the policy.
+  const imposition =
+    h.denouement === 'deces'
+      ? imposerDeces({ valeur: valeurBrute, primes, psDejaPayes: psPayes })
+      : imposer({
+          rachat: valeurBrute,
+          valeur: valeurBrute,
+          primes,
+          anciennete: h.horizon,
+          foyer: h.foyer,
+          psDejaPayes: psPayes,
+        });
   couts.fiscalite = imposition.total + psPayes;
 
-  const capitalNet = valeurBrute - imposition.total;
+  // Duties bite on what is left once the social levies are settled, which is
+  // the order the two are actually taken in.
+  const succession =
+    h.denouement === 'deces'
+      ? imposerSuccession({
+          capital: valeurBrute - imposition.total,
+          primesAvant70,
+          primesApres70: primes - primesAvant70,
+          beneficiaires: h.beneficiaires,
+          tauxDroits: h.tauxDroitsSuccession,
+        })
+      : null;
+  couts.succession = succession?.total ?? 0;
+
+  const capitalNet = valeurBrute - imposition.total - couts.succession;
   const valeurFinale = pocheE + pocheU + provisionAcquise;
 
   const base: Omit<
@@ -982,6 +1159,8 @@ export function projeterContrat(
     plusValue,
     partUCFinale: valeurFinale > 0 ? pocheU / valeurFinale : 0,
     imposition,
+    succession,
+    denouement: h.denouement,
     psPayes,
     capitalNet,
     capitalNetReel: enEurosConstants(capitalNet, h.inflation, h.horizon),
@@ -989,6 +1168,9 @@ export function projeterContrat(
     tauxAnnuelUC,
     tauxAnnuelEuros,
     partUCVisee: h.partUC,
+    provisionFin: provision,
+    provisionAcquise,
+    valeurRachatFin: pocheE + pocheU,
     coutsPreleves: couts,
     reserves: c.reserves,
   };
@@ -1035,6 +1217,93 @@ export function projeterContrat(
   };
 }
 
+export type RachatPartiel = {
+  /** What was asked for. */
+  montant: number;
+  /** What the policy could actually release that year — reserve excluded. */
+  disponible: number;
+  /** False when the ask exceeds what is redeemable at all. */
+  possible: boolean;
+  /** How much of the ask had to come out of the euro pocket. */
+  prisSurEuros: number;
+  /** How much the unit-linked pocket absorbed first, and therefore shielded. */
+  prisSurUnites: number;
+  reserveAvant: number;
+  reservePerdue: number;
+  reserveConservee: number;
+  /** The forfeited reserve valued as the term would have paid it, uplift included. */
+  manqueAuTerme: number;
+  /** What emptying the fund instead would have cost, for scale. */
+  solderCouterait: number;
+};
+
+/**
+ * What taking money out one year early actually costs.
+ *
+ * This exists because the headline projection cannot answer it. A projection
+ * ends once: it surrenders everything on the last day, and every figure it
+ * reports is about that day. The question a saver in front of a locked fund
+ * actually has — *what if we need thirty thousand in year five?* — is about a
+ * day in the middle, and answering it by re-running the whole plan on a shorter
+ * horizon would answer a different question: that one gives up the policy for
+ * good.
+ *
+ * Two rules do the work, and both are contractual rather than arithmetic:
+ *
+ *  - **The withdrawal is served in the order the contract serves it.** Where
+ *    the default spares the locked fund, a unit-linked pocket held alongside
+ *    absorbs the blow first and the reserve never notices — which is exactly
+ *    why holding one is advice rather than decoration.
+ *  - **What reaches the euro pocket cuts the reserve pro rata of the pocket, not
+ *    of the policy.** The reserve is not part of the redeemable value, so
+ *    dividing by the displayed value would understate the damage on every
+ *    contract where the reserve has had time to grow.
+ *
+ * `solderCouterait` sits beside the answer on purpose: the gap between taking
+ * what is needed and closing the fund is the whole practical lesson, and a
+ * figure with nothing to be compared to teaches none of it.
+ */
+export function coutRachatPartiel(
+  r: ResultatAccessible,
+  annee: number,
+  montant: number,
+): RachatPartiel {
+  const fonds = contratDe(r.cle).fondsEuros.find((f) => f.cle === r.fondsRetenu);
+  const a = r.annees.find((x) => x.annee === annee) ?? r.annees.at(-1);
+  const provisionDe = fonds?.provisionFidelite ?? null;
+
+  const pocheEuros = Math.max(0, (a?.pocheEurosFin ?? 0));
+  const pocheUC = Math.max(0, (a?.pocheUCFin ?? 0));
+  const disponible = pocheEuros + pocheUC;
+  const demande = Math.max(0, montant);
+  const servi = Math.min(demande, disponible);
+
+  const prisSurUnites =
+    provisionDe?.imputationRachat === 'unites-d-abord' ? Math.min(servi, pocheUC) : 0;
+  const prisSurEuros = Math.min(servi - prisSurUnites, pocheEuros);
+
+  const reserveAvant = a?.provisionFin ?? 0;
+  // Reaching the term is what the reserve is for, so a loss before it is
+  // measured against what the term would have paid — never against the bare
+  // provision, which is a number nobody was ever going to receive as such.
+  const bonus = 1 + (provisionDe?.bonusAuTerme ?? 0);
+  const perdue =
+    provisionDe && pocheEuros > 0 ? reserveAvant * Math.min(1, prisSurEuros / pocheEuros) : 0;
+
+  return {
+    montant: demande,
+    disponible,
+    possible: demande <= disponible + 1e-9,
+    prisSurEuros,
+    prisSurUnites,
+    reserveAvant,
+    reservePerdue: perdue,
+    reserveConservee: reserveAvant - perdue,
+    manqueAuTerme: perdue * bonus,
+    solderCouterait: reserveAvant * bonus,
+  };
+}
+
 /**
  * Warnings that depend on the plan rather than on the contract.
  *
@@ -1058,13 +1327,51 @@ function alerter(
 
   const provisionDe = fonds.provisionFidelite;
   if (provisionDe && h.horizon < provisionDe.termeAnnees) {
-    alertes.push({
-      genre: 'liquidite',
-      texte:
-        `Votre horizon de ${h.horizon} ans est plus court que le terme de ${provisionDe.termeAnnees} ans ` +
-        `du fonds ${fonds.libelle} : les intérêts mis en réserve sont perdus, et le contrat est ici ` +
-        'projeté en conséquence.',
-    });
+    alertes.push(
+      h.denouement === 'deces'
+        ? {
+            genre: 'liquidite',
+            texte:
+              `Le décès survient avant le terme de ${provisionDe.termeAnnees} ans du fonds ${fonds.libelle}. ` +
+              (provisionDe.auDeces === 'acquise-sans-bonus'
+                ? `La réserve est reversée aux bénéficiaires — mais sans la majoration de ` +
+                  `${Math.round(provisionDe.bonusAuTerme * 100)} %, qui n’est due qu’à qui atteint le terme.`
+                : 'La réserve est perdue, et le contrat est ici projeté en conséquence.'),
+          }
+        : {
+            genre: 'liquidite',
+            texte:
+              `Votre horizon de ${h.horizon} ans est plus court que le terme de ${provisionDe.termeAnnees} ans ` +
+              `du fonds ${fonds.libelle} : sortir à cette date solde le fonds, et les intérêts mis en réserve ` +
+              'sont perdus en totalité. Un retrait partiel, lui, ne les entame qu’au prorata.',
+          },
+    );
+  }
+
+  // The seventy-year pivot, and only when it actually bit: a plan entirely paid
+  // in before the birthday is governed by one article and has nothing to be
+  // warned about.
+  if (h.denouement === 'deces') {
+    const apres70 = h.horizon > 0 && !avantSoixanteDix(h, h.horizon);
+    const debutApres70 = !avantSoixanteDix(h, 1);
+    if (debutApres70) {
+      alertes.push({
+        genre: 'contrainte',
+        texte:
+          `À ${h.ageSouscription} ans, tous les versements relèvent de l’article 757 B : l’abattement ` +
+          'tombe à 30 500 € pour l’ensemble des bénéficiaires et de vos contrats, au lieu de ' +
+          `${ABATTEMENT_990I.toLocaleString('fr-FR')} € chacun. En revanche, les gains sont exonérés de droits.`,
+      });
+    } else if (apres70) {
+      const bascule = AGE_PIVOT - h.ageSouscription + 1;
+      alertes.push({
+        genre: 'contrainte',
+        texte:
+          `Vos versements changent de régime à partir de la ${bascule}ᵉ année, celle de vos 70 ans : ` +
+          'ceux d’avant ouvrent 152 500 € d’abattement par bénéficiaire, ceux d’après se partagent ' +
+          '30 500 € en tout. Avancer les versements est ici plus rentable que changer de contrat.',
+      });
+    }
   }
 
   if (h.rebalancement === 'annuel' && provisionDe && h.partUC > 0 && h.partUC < 1) {

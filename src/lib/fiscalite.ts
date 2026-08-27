@@ -142,9 +142,48 @@ export function imposer(args: {
 }
 
 /**
+ * What is owed when the policy is settled by a death instead of a withdrawal.
+ *
+ * A function of its own rather than a flag on `imposer`, because the two differ
+ * in kind and not in degree: **a death is not an income event**. The gain
+ * escapes income tax entirely — no rate, no allowance, no eight-year cliff —
+ * and what replaces it is a duty on the capital that this module knows nothing
+ * about, computed in `succession.ts`.
+ *
+ * What survives is the social levy, and only the part of it not already taken:
+ * the euro pocket has been levied year after year regardless, so the settlement
+ * owes the difference on the unit-linked gain. Returning the same `Imposition`
+ * shape as a withdrawal is deliberate — everything downstream reconciles the
+ * two settlements identically, and the zeroes say plainly which lines a death
+ * does not reach.
+ */
+export function imposerDeces(args: {
+  valeur: number;
+  primes: number;
+  psDejaPayes: number;
+}): Imposition {
+  const { valeur, primes, psDejaPayes } = args;
+  const assiette = assietteRachat(valeur, valeur, valeur - primes);
+  const prelevementsSociaux = PRELEVEMENTS_SOCIAUX * assiette - psDejaPayes;
+  return {
+    assiette,
+    abattement: 0,
+    tauxApplique: 0,
+    impotRevenu: 0,
+    prelevementsSociaux,
+    total: prelevementsSociaux,
+  };
+}
+
+/**
  * Reservations that hold for every contract in the catalogue, because they are
  * properties of the tax regime rather than of any one insurer. Repeating them
  * on each entry would be six copies of the same sentence.
+ *
+ * These are the ones a *withdrawal* answers to. A policy settled by a death is
+ * governed by another regime and carries its own list, in `succession.ts`:
+ * printing the eight-year allowance beside a death benefit would be describing
+ * a rule that does not apply.
  */
 export const RESERVES_FISCALES: string[] = [
   'L’abattement de 4 600 € (9 200 € pour un couple) est annuel et commun à tous vos contrats. ' +

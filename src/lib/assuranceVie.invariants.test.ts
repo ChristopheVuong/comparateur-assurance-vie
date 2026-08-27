@@ -13,6 +13,7 @@ import {
   POSTES_RECURRENTS,
   borner,
   comparer,
+  coutRachatPartiel,
   postes,
   projeterContrat,
   sommeTaux,
@@ -503,5 +504,224 @@ describe('purity and bounds', () => {
     expect(h.rendementUC).toBe(-0.05);
     expect(h.classeUC).toBe('actions-monde');
     expect(h.foyer).toBe('seul');
+  });
+});
+
+/**
+ * The settlement, once the engine learned that a policy can end in two ways.
+ *
+ * These say what has to hold on *every* plan under a death, and — more useful —
+ * what has to stay identical between the two branches. Everything before the
+ * last day is the same plan: the same fees, on the same pockets, for the same
+ * years. A difference anywhere in that stretch would mean the death branch had
+ * quietly become a second simulator.
+ */
+describe('a death and a withdrawal are the same plan until the last day', () => {
+  const paires = () =>
+    GRILLE.slice(0, 24).flatMap((h) =>
+      CONTRATS.map((c) => ({
+        rachat: projeterContrat({ ...h, denouement: 'rachat' }, c),
+        deces: projeterContrat({ ...h, denouement: 'deces' }, c),
+      })),
+    ).filter((p) => p.rachat.accessible && p.deces.accessible);
+
+  it('runs the same years, fee for fee', () => {
+    for (const { rachat, deces } of paires()) {
+      if (!rachat.accessible || !deces.accessible) continue;
+      expect(deces.annees).toEqual(rachat.annees);
+      expect(deces.psPayes).toBeCloseTo(rachat.psPayes, 9);
+      expect(deces.primesVersees).toBeCloseTo(rachat.primesVersees, 9);
+      expect(deces.fraisAnnuelsUC).toBeCloseTo(rachat.fraisAnnuelsUC, 12);
+    }
+  });
+
+  it('never charges income tax on a death', () => {
+    for (const { deces } of paires()) {
+      if (!deces.accessible) continue;
+      expect(deces.imposition.impotRevenu).toBe(0);
+      expect(deces.imposition.abattement).toBe(0);
+      expect(deces.imposition.tauxApplique).toBe(0);
+    }
+  });
+
+  it('reports duties on a death and nothing at all on a withdrawal', () => {
+    for (const { rachat, deces } of paires()) {
+      if (!rachat.accessible || !deces.accessible) continue;
+      expect(rachat.succession).toBeNull();
+      expect(rachat.coutsPreleves.succession).toBe(0);
+      expect(deces.succession).not.toBeNull();
+      expect(deces.coutsPreleves.succession).toBeCloseTo(deces.succession?.total ?? -1, 9);
+    }
+  });
+
+  it('settles the same social levies either way, since a death owes them too', () => {
+    for (const { rachat, deces } of paires()) {
+      if (!rachat.accessible || !deces.accessible) continue;
+      // Only where the reserve does not make the two gross values differ.
+      if (Math.abs(deces.valeurBrute - rachat.valeurBrute) > 1e-6) continue;
+      expect(deces.imposition.prelevementsSociaux).toBeCloseTo(
+        rachat.imposition.prelevementsSociaux,
+        6,
+      );
+    }
+  });
+});
+
+describe('the fidelity reserve, settled by a death', () => {
+  const generation = contrat('afer-generation');
+  const plan = { partUC: 0, rebalancement: 'aucun' } as const;
+
+  it('is handed over rather than forfeited, which a withdrawal cannot say', () => {
+    const sept = projeterContrat(sur({ ...plan, horizon: 7, denouement: 'deces' }), generation);
+    const rachete = projeterContrat(sur({ ...plan, horizon: 7, denouement: 'rachat' }), generation);
+    expect(sept.accessible && rachete.accessible).toBe(true);
+    if (!sept.accessible || !rachete.accessible) return;
+
+    expect(rachete.provisionAcquise).toBe(0);
+    expect(sept.provisionAcquise).toBeCloseTo(sept.provisionFin, 9);
+    expect(sept.valeurBrute).toBeGreaterThan(rachete.valeurBrute);
+    // And nothing was taken: a reserve handed over is not a penalty.
+    expect(sept.coutsPreleves.provisionPerdue).toBe(0);
+  });
+
+  it('costs exactly the uplift the term would have paid, and not a euro more', () => {
+    const r = projeterContrat(sur({ ...plan, horizon: 7, denouement: 'deces' }), generation);
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    const provision = r.annees.at(-1)!.provisionFin;
+    // The reserve is there; the 10 % is not.
+    expect(r.provisionAcquise).toBeCloseTo(provision, 6);
+    expect(r.provisionAcquise).toBeLessThan(provision * 1.1);
+  });
+
+  it('still pays the uplift when the term is reached, death or not', () => {
+    for (const denouement of ['rachat', 'deces'] as const) {
+      const r = projeterContrat(sur({ ...plan, horizon: 8, denouement }), generation);
+      expect(r.accessible).toBe(true);
+      if (!r.accessible) continue;
+      expect(r.provisionAcquise).toBeCloseTo(r.provisionFin * 1.1, 6);
+    }
+  });
+});
+
+describe('what could actually be withdrawn', () => {
+  it('never reports more available than the policy is worth', () => {
+    for (const { r } of TOUTES) {
+      for (const a of r.annees) {
+        expect(a.valeurRachat).toBeLessThanOrEqual(a.valeurFin + 1e-9);
+        expect(a.valeurRachat).toBeGreaterThanOrEqual(-1e-9);
+        expect(a.valeurFin - a.valeurRachat).toBeCloseTo(a.provisionFin, 6);
+      }
+    }
+  });
+
+  it('equals the value itself on every contract without a reserve', () => {
+    for (const { c, r } of TOUTES) {
+      if (c.fondsEuros.some((f) => f.provisionFidelite)) continue;
+      for (const a of r.annees) expect(a.valeurRachat).toBeCloseTo(a.valeurFin, 6);
+    }
+  });
+
+  it('cuts the reserve in proportion, and only for what leaves the euro pocket', () => {
+    const r = projeterContrat(
+      sur({ horizon: 7, partUC: 0, rebalancement: 'aucun', versementInitial: 100_000 }),
+      contrat('afer-generation'),
+    );
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    const a = r.annees.at(-1)!;
+
+    const rien = coutRachatPartiel(r, 7, 0);
+    expect(rien.reservePerdue).toBe(0);
+
+    const moitie = coutRachatPartiel(r, 7, a.valeurRachat / 2);
+    expect(moitie.reservePerdue).toBeCloseTo(a.provisionFin / 2, 6);
+    expect(moitie.reserveConservee).toBeCloseTo(a.provisionFin / 2, 6);
+
+    const tout = coutRachatPartiel(r, 7, a.valeurRachat);
+    expect(tout.reservePerdue).toBeCloseTo(a.provisionFin, 6);
+    expect(tout.manqueAuTerme).toBeCloseTo(tout.solderCouterait, 6);
+  });
+
+  it('lets a unit-linked pocket absorb the blow first, where the contract says so', () => {
+    const r = projeterContrat(
+      sur({ horizon: 7, partUC: 0.5, rebalancement: 'aucun', versementInitial: 100_000 }),
+      contrat('afer-generation'),
+    );
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    const a = r.annees.at(-1)!;
+
+    // Anything the units can cover leaves the reserve untouched. That is the
+    // buffer, and it is the practical advice this figure exists to support.
+    const petit = coutRachatPartiel(r, 7, a.pocheUCFin / 2);
+    expect(petit.prisSurEuros).toBeCloseTo(0, 6);
+    expect(petit.reservePerdue).toBeCloseTo(0, 6);
+
+    const gros = coutRachatPartiel(r, 7, a.pocheUCFin + a.pocheEurosFin / 4);
+    expect(gros.prisSurUnites).toBeCloseTo(a.pocheUCFin, 6);
+    expect(gros.reservePerdue).toBeCloseTo(a.provisionFin / 4, 6);
+  });
+
+  it('refuses to pretend more is available than there is', () => {
+    const r = projeterContrat(sur({ horizon: 5 }), contrat('linxea-spirit-2'));
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    const trop = coutRachatPartiel(r, 5, 10_000_000);
+    expect(trop.possible).toBe(false);
+    expect(trop.disponible).toBeCloseTo(r.annees.at(-1)!.valeurRachat, 6);
+  });
+});
+
+describe('the seventieth birthday', () => {
+  const plan = (ageSouscription: number) =>
+    sur({
+      denouement: 'deces',
+      ageSouscription,
+      horizon: 10,
+      partUC: 0,
+      versementInitial: 10_000,
+      versementProgramme: 10_000,
+      periodicite: 'annuelle',
+    });
+
+  it('splits the premiums on the year, and accounts for all of them', () => {
+    for (const age of [50, 65, 68, 70, 75]) {
+      const r = projeterContrat(plan(age), contrat('linxea-spirit-2'));
+      expect(r.accessible).toBe(true);
+      if (!r.accessible || !r.succession) continue;
+      expect(r.succession.partAvant70).toBeGreaterThanOrEqual(0);
+      expect(r.succession.partAvant70).toBeLessThanOrEqual(1);
+      expect(r.succession.capital990I + r.succession.capital757B).toBeCloseTo(
+        r.valeurBrute - r.imposition.total,
+        6,
+      );
+    }
+  });
+
+  it('puts everything under the favourable article when the pivot never arrives', () => {
+    const r = projeterContrat(plan(50), contrat('linxea-spirit-2'));
+    expect(r.accessible).toBe(true);
+    if (r.accessible) expect(r.succession?.partAvant70).toBeCloseTo(1, 9);
+  });
+
+  it('puts nothing under it when the saver was already past seventy', () => {
+    const r = projeterContrat(plan(75), contrat('linxea-spirit-2'));
+    expect(r.accessible).toBe(true);
+    if (r.accessible) expect(r.succession?.partAvant70).toBeCloseTo(0, 9);
+  });
+
+  it('moves more money than any fee in the catalogue does', () => {
+    // The claim the whole death branch is here to make. Six years of birthday
+    // against every fee schedule in the catalogue, on the same plan.
+    const jeune = projeterContrat(plan(60), contrat('linxea-spirit-2'));
+    const vieux = projeterContrat(plan(70), contrat('linxea-spirit-2'));
+    expect(jeune.accessible && vieux.accessible).toBe(true);
+    if (!jeune.accessible || !vieux.accessible) return;
+    const ecartAge = jeune.capitalNet - vieux.capitalNet;
+
+    const tous = comparer(plan(60)).filter((r): r is ResultatAccessible => r.accessible);
+    const ecartContrats = tous[0].capitalNet - tous.at(-1)!.capitalNet;
+    expect(ecartAge).toBeGreaterThan(Math.abs(ecartContrats));
   });
 });

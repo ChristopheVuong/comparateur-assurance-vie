@@ -68,6 +68,11 @@ describe('the catalogue of deductions', () => {
       'arbitrage',
       'provisionPerdue',
       'fiscalite',
+      // Added when the engine learned to settle a policy by a death: duties on
+      // a transmitted capital are not income tax on a gain, and the two are
+      // mutually exclusive. Kept last because it is the only line a withdrawal
+      // never reaches.
+      'succession',
     ]);
   });
 

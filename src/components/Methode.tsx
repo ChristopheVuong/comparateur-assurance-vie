@@ -1,5 +1,6 @@
 import { CONTRATS, DATE_RELEVE } from '../lib/contrats';
 import { RESERVES_FISCALES } from '../lib/fiscalite';
+import { RESERVES_SUCCESSION } from '../lib/succession';
 import { RENDEMENT_BRUT, SUPPORTS, LIBELLES_CLASSES, CLASSES } from '../lib/supports';
 import { taux } from '../lib/format';
 
@@ -50,11 +51,24 @@ export function Methode() {
                 lui aussi. Sur les unités de compte, ils n’interviennent qu’à la sortie.
               </Etape>
               <Etape n={6}>
-                À la sortie, seule la <strong>part de plus-value</strong> contenue dans le rachat
-                est taxée : abattement de 4 600 € ou 9 200 € après huit ans, puis 7,5 % au prorata
-                des primes sous 150 000 € et 12,8 % au-delà.
+                Si le plan se termine par un <strong>rachat</strong>, seule la{' '}
+                <strong>part de plus-value</strong> qu’il contient est taxée : abattement de
+                4 600 € ou 9 200 € après huit ans, puis 7,5 % au prorata des primes sous 150 000 €
+                et 12,8 % au-delà.
+              </Etape>
+              <Etape n={7}>
+                S’il se termine par un <strong>décès</strong>, la plus-value ne rencontre{' '}
+                <strong>jamais l’impôt sur le revenu</strong>. Restent les prélèvements sociaux,
+                puis les droits de succession : le contrat est coupé au prorata des primes versées
+                avant et après 70 ans, 152 500 € par bénéficiaire d’un côté, 30 500 € pour tout le
+                monde de l’autre — mais gains exonérés de ce côté-là.
               </Etape>
             </ol>
+            <p className="mt-4 border-l-2 border-ink-200 pl-3 text-sm leading-relaxed text-ink-500">
+              Ces deux dénouements sont le <strong className="font-medium">même plan</strong>{' '}
+              jusqu’au dernier jour : mêmes frais, mêmes poches, mêmes années. Un test le vérifie
+              année par année, pour qu’une branche ne devienne pas un second simulateur.
+            </p>
           </div>
 
           <div className="card p-6 sm:p-8">
@@ -85,6 +99,18 @@ export function Methode() {
                 Un taux unique est reconduit sur tout l’horizon. Aucun assureur ne s’engage sur le
                 taux de l’année suivante, et plusieurs de ces fonds ont déjà varié d’un demi-point
                 d’une année sur l’autre.
+              </Limite>
+              <Limite titre="Chiffrer seul les droits dus après 70 ans.">
+                Les primes versées après 70 ans suivent le barème ordinaire des successions, qui
+                dépend du lien de parenté et de tout ce que le bénéficiaire reçoit par ailleurs —
+                rien de tout cela n’est une propriété d’un contrat d’assurance-vie. Le taux est une
+                hypothèse que vous réglez, et l’assiette est affichée à part pour que vous puissiez
+                refaire la multiplication.
+              </Limite>
+              <Limite titre="Deviner qui hérite.">
+                Le conjoint survivant et le partenaire de PACS sont exonérés de tout. Le calcul
+                suppose des bénéficiaires qui ne le sont pas plutôt que de vous demander un lien de
+                parenté pour vous répondre zéro.
               </Limite>
               <Limite titre="Projeter en pouvoir d’achat.">
                 Toute la projection est en{' '}
@@ -181,9 +207,25 @@ export function Methode() {
           ))}
         </ul>
 
-        <h3 className="mt-10 text-base font-semibold text-ink-900">Réserves d’ordre général</h3>
+        {/* Both regimes here, and not only the one the current plan selected:
+            this page describes the model, not a projection. The detail panel is
+            where a reader is shown the list that applies to what they asked. */}
+        <h3 className="mt-10 text-base font-semibold text-ink-900">
+          Réserves d’ordre général — si vous rachetez
+        </h3>
         <ul className="mt-3 max-w-3xl space-y-2.5 text-sm leading-relaxed text-ink-500">
           {RESERVES_FISCALES.map((texte) => (
+            <li key={texte} className="border-l-2 border-ink-200 pl-3">
+              {texte}
+            </li>
+          ))}
+        </ul>
+
+        <h3 className="mt-8 text-base font-semibold text-ink-900">
+          Réserves d’ordre général — si vous transmettez
+        </h3>
+        <ul className="mt-3 max-w-3xl space-y-2.5 text-sm leading-relaxed text-ink-500">
+          {RESERVES_SUCCESSION.map((texte) => (
             <li key={texte} className="border-l-2 border-ink-200 pl-3">
               {texte}
             </li>

@@ -1,10 +1,12 @@
 import {
   LIBELLES_GROUPE,
+  coutRachatPartiel,
   grouper,
   totalFrais,
   type ResultatAccessible,
 } from '../lib/assuranceVie';
 import { RESERVES_FISCALES } from '../lib/fiscalite';
+import { ABATTEMENT_990I, RESERVES_SUCCESSION } from '../lib/succession';
 import { LIBELLES_GENRE_RESERVE, contrat, type GenreReserve } from '../lib/contrats';
 import { support } from '../lib/supports';
 import { SEUIL_EUR_VISIBLE, eur, taux } from '../lib/format';
@@ -68,7 +70,15 @@ export function Detail({ r }: { r: ResultatAccessible }) {
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <Chiffre libelle="Vous avez versé" valeur={eur(r.primesVersees)} />
-        <Chiffre libelle="Vous récupérez, net d’impôt" valeur={eur(r.capitalNet)} fort />
+        <Chiffre
+          libelle={
+            r.denouement === 'deces'
+              ? 'Vos bénéficiaires reçoivent, net de droits'
+              : 'Vous récupérez, net d’impôt'
+          }
+          valeur={eur(r.capitalNet)}
+          fort
+        />
         <Chiffre
           libelle="Les frais vous ont coûté"
           valeur={eur(r.manqueAGagner)}
@@ -151,6 +161,10 @@ export function Detail({ r }: { r: ResultatAccessible }) {
         </div>
       )}
 
+      {r.succession && <Transmission r={r} />}
+
+      <Liquidite r={r} />
+
       {/* ------------------------------------- Composition */}
 
       <h4 className="mt-8 text-sm font-semibold text-ink-900">Ce que le contrat a retenu</h4>
@@ -211,8 +225,11 @@ export function Detail({ r }: { r: ResultatAccessible }) {
         <summary className="cursor-pointer text-sm font-medium text-ink-500 transition hover:text-brand-700">
           Réserves valables pour tous les contrats
         </summary>
+        {/* The regime decides the list. Printing the eight-year allowance under
+            a death benefit would describe a rule that does not apply to it, and
+            printing both would leave the reader to work out which. */}
         <ul className="mt-3 space-y-2 text-sm leading-relaxed text-ink-500">
-          {RESERVES_FISCALES.map((texte) => (
+          {(r.denouement === 'deces' ? RESERVES_SUCCESSION : RESERVES_FISCALES).map((texte) => (
             <li key={texte} className="border-l-2 border-ink-200 pl-3">
               {texte}
             </li>
@@ -247,6 +264,139 @@ export function Detail({ r }: { r: ResultatAccessible }) {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * How the death benefit is taxed, which is a story about dates rather than
+ * about money.
+ *
+ * The split between the two articles is printed even when it is one hundred per
+ * cent on one side, because *that* is the answer worth reading: a reader who
+ * sees "100 % sous l'article 990 I" learns that the seventieth birthday never
+ * came into it, which no absence of a line could have told them.
+ */
+function Transmission({ r }: { r: ResultatAccessible }) {
+  const s = r.succession;
+  if (!s) return null;
+  const partApres = 1 - s.partAvant70;
+
+  return (
+    <>
+      <h4 className="mt-8 text-sm font-semibold text-ink-900">Ce qui revient aux bénéficiaires</h4>
+      <dl className="mt-3 space-y-2 text-sm">
+        <Poste terme="Capital transmis, avant droits" montant={s.capital990I + s.capital757B} />
+        <Poste
+          terme={`Sous l’article 990 I — versements avant 70 ans (${taux(s.partAvant70)})`}
+          montant={s.capital990I}
+          sourdine
+        />
+        {partApres > 1e-9 && (
+          <Poste
+            terme={`Sous l’article 757 B — versements après 70 ans (${taux(partApres)})`}
+            montant={s.capital757B}
+            sourdine
+          />
+        )}
+        <Poste terme="Dont abattements, hors droits" montant={s.abattement990I} ton="jade" />
+        <Poste terme="Droits dus au titre du 990 I" montant={s.droits990I} />
+        {partApres > 1e-9 && (
+          <Poste terme="Droits dus au titre du 757 B" montant={s.droits757B} />
+        )}
+      </dl>
+      <p className="field-hint mt-3">
+        {s.droits990I === 0 && s.droits757B === 0
+          ? `Rien n’est dû : le capital tient dans les abattements. Tant qu’une part reste sous ${eur(ABATTEMENT_990I)} par bénéficiaire, c’est le contrat qui décide du résultat, pas le fisc.`
+          : `Les gains ne rencontrent jamais l’impôt sur le revenu ici : seuls les prélèvements sociaux ont été retenus, puis les droits ci-dessus. C’est ce qui rend la valeur brute — et non le net après rachat — la bonne colonne à comparer dans une logique de transmission.`}
+        {s.assiette757B > 0 &&
+          ` Les ${eur(s.assiette757B)} de primes versées après 70 ans au-delà de l’abattement sont taxées au taux que vous avez supposé ; leurs gains, eux, sont exonérés.`}
+      </p>
+    </>
+  );
+}
+
+/**
+ * What could actually be taken out, and what taking it would cost.
+ *
+ * Rendered only for a contract whose euro fund locks interest away, because
+ * anywhere else it would print the same number twice and teach nothing. The
+ * illustration is pinned to the last year before the term — the year the
+ * reserve is largest and the mistake most expensive — rather than to the
+ * horizon, which may sit long after the lock has ended.
+ */
+function Liquidite({ r }: { r: ResultatAccessible }) {
+  const c = contrat(r.cle);
+  const fonds = c.fondsEuros.find((f) => f.cle === r.fondsRetenu);
+  const provisionDe = fonds?.provisionFidelite;
+  if (!provisionDe) return null;
+
+  const annee = Math.min(r.annees.length, provisionDe.termeAnnees - 1);
+  const a = r.annees.find((x) => x.annee === annee);
+  if (!a || a.provisionFin <= SEUIL_EUR_VISIBLE) return null;
+
+  // A round tenth of what is redeemable: big enough to matter, small enough
+  // that nobody reads it as advice to empty the policy.
+  const montant = Math.max(1_000, Math.round(a.valeurRachat / 10_000) * 1_000);
+  const rachat = coutRachatPartiel(r, annee, montant);
+
+  return (
+    <>
+      <h4 className="mt-8 text-sm font-semibold text-ink-900">
+        Ce que vous pourriez réellement retirer
+      </h4>
+      <dl className="mt-3 space-y-2 text-sm">
+        <Poste terme={`Valeur affichée à la fin de l’année ${annee}`} montant={a.valeurFin} />
+        <Poste terme="Dont réserve de fidélité, non rachetable" montant={a.provisionFin} sourdine />
+        <Poste terme="Donc réellement disponible" montant={a.valeurRachat} ton="jade" />
+      </dl>
+      <div className="mt-4 rounded-xl border border-ambre-100 bg-ambre-50 px-4 py-3">
+        <p className="text-sm leading-relaxed text-ink-700">
+          Retirer <strong className="font-semibold">{eur(rachat.montant)}</strong> cette année-là
+          coûterait <strong className="font-semibold">{eur(rachat.manqueAuTerme)}</strong> de
+          réserve
+          {rachat.prisSurUnites > SEUIL_EUR_VISIBLE
+            ? ` — le rachat est d’abord servi par les unités de compte, qui en absorbent ${eur(rachat.prisSurUnites)} avant que le fonds en euros ne soit touché`
+            : ''}
+          . Solder le fonds au lieu de retirer ce montant en coûterait{' '}
+          <strong className="font-semibold">{eur(rachat.solderCouterait)}</strong>.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-ink-600">
+          La réserve est amputée à due proportion de ce qui sort du fonds en euros, jamais en
+          totalité — c’est la sortie complète qui la détruit. L’écart entre les deux est le seul
+          arbitrage qui compte si un besoin d’argent survient avant le terme.
+        </p>
+      </div>
+    </>
+  );
+}
+
+/** One line of a breakdown: a term, dots, an amount. */
+function Poste({
+  terme,
+  montant,
+  sourdine = false,
+  ton,
+}: {
+  terme: string;
+  montant: number;
+  sourdine?: boolean;
+  ton?: 'jade';
+}) {
+  return (
+    <div className="flex items-baseline gap-3">
+      <dt className={['shrink-0', sourdine ? 'pl-4 text-ink-500' : 'text-ink-600'].join(' ')}>
+        {terme}
+      </dt>
+      <span className="h-px min-w-4 flex-1 self-end border-b border-dotted border-ink-200" />
+      <dd
+        className={[
+          'tabular shrink-0 font-medium',
+          ton === 'jade' ? 'text-jade-600' : sourdine ? 'text-ink-500' : 'text-ink-900',
+        ].join(' ')}
+      >
+        {eur(montant)}
+      </dd>
+    </div>
+  );
+}
 
 function Chiffre({
   libelle,

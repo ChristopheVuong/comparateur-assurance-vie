@@ -134,8 +134,44 @@ export type ProvisionFidelite = {
   partProvisionnee: number;
   /** Minimum uplift on the capitalised interest, credited at the term. */
   bonusAuTerme: number;
-  /** What an exit before the term costs. */
+  /**
+   * What a *full* exit before the term costs.
+   *
+   * Full, and the word is load-bearing: a partial withdrawal is a different
+   * event with a different rule, and the engine already applies it — the
+   * reserve is cut in the proportion of the euro pocket taken out, never in
+   * whole. Reading this field as "what any early exit costs" is the mistake it
+   * is named against.
+   */
   perteAvantTerme: 'totale' | 'prorata-temporis';
+  /**
+   * What a death before the term does to the reserve, which is not the same
+   * question as what an exit does.
+   *
+   * It earns a field because the two contracts one could imagine here differ by
+   * the whole reserve: one hands it to the beneficiaries, the other keeps it.
+   * Folding it into `perteAvantTerme` would have made a death a kind of
+   * withdrawal — which is precisely the confusion that made the reserve look
+   * like a bet on the saver's longevity when it is not one.
+   *
+   * `acquise-sans-bonus` is the Afer wording made mechanical: the provision is
+   * added back to the death benefit, but the uplift promised at the term is not
+   * — it is owed to whoever reaches the term, and a death does not reach it.
+   */
+  auDeces: 'acquise-sans-bonus' | 'perdue';
+  /**
+   * Which pocket a partial withdrawal is served from when the saver says
+   * nothing.
+   *
+   * Only observable on a fund that locks interest away — anywhere else the
+   * order changes no figure — which is why it lives here rather than on the
+   * contract. And it is worth a field because the catalogue holds both answers:
+   * Afer Génération explicitly serves a withdrawal from everything *except* the
+   * locked fund, while the Multisupport notice serves it from the euro fund
+   * first. Same insurer, opposite default, and the difference decides whether a
+   * unit-linked pocket held alongside acts as a buffer or not.
+   */
+  imputationRachat: 'unites-d-abord' | 'euros-d-abord';
 };
 
 export type CleFondsEuros =
@@ -229,11 +265,14 @@ const AFER_EUROGENERATION: FondsEuros = {
     partProvisionnee: 1,
     bonusAuTerme: 0.1,
     perteAvantTerme: 'totale',
+    auDeces: 'acquise-sans-bonus',
+    imputationRachat: 'unites-d-abord',
   },
   note:
     'Ce n’est pas un fonds en euros ordinaire, et son 4,05 % ne se compare pas au 2,65 % du fonds ' +
     'classique. Les intérêts ne sont pas versés : ils sont mis en réserve, majorés d’au moins 10 % ' +
-    'au bout de huit ans — et perdus si vous sortez avant.',
+    'au bout de huit ans — perdus si vous soldez le fonds avant, entamés au prorata si vous en ' +
+    'retirez une partie, et rendus sans le bonus si vous décédez d’ici là.',
 };
 
 const MACIF_EURO: FondsEuros = {
@@ -437,21 +476,38 @@ export const CONTRATS: Contrat[] = [
         genre: 'liquidite',
         texte:
           'Les intérêts du fonds Afer EuroGénération sont mis en réserve et ne vous sont acquis qu’au ' +
-          'terme de huit ans, majorés d’au moins 10 %. Tout rachat ou arbitrage sortant avant ce terme ' +
-          'fait perdre cette réserve. Le rendement affiché est donc conditionnel à un blocage effectif.',
+          'terme de huit ans, majorés d’au moins 10 %. Cette réserve n’est pas rachetable : pendant ' +
+          'huit ans, la valeur de rachat du fonds reste celle de vos versements nets de frais, quoi ' +
+          'qu’affiche le relevé. Le rendement mis en avant est donc conditionnel à un blocage effectif.',
       },
       {
-        genre: 'donnee',
+        genre: 'liquidite',
         texte:
-          'La notice ne dit pas explicitement si une sortie anticipée fait perdre la réserve en totalité ' +
-          'ou au prorata du temps écoulé. La lecture prudente — perte totale — a été retenue, ce qui ' +
-          'désavantage le contrat sur les horizons courts.',
+          'Solder le fonds avant le terme fait perdre toute la réserve, et la participation aux ' +
+          'bénéfices de l’année en cours avec elle. En retirer une partie ne l’ampute qu’à due ' +
+          'proportion du montant désinvesti (notice, art. 5.1.2.3) : entre retirer ce qu’il faut et ' +
+          'tout solder, l’écart se compte en dizaines de milliers d’euros.',
+      },
+      {
+        genre: 'contrainte',
+        texte:
+          'Un rachat partiel est par défaut imputé sur les autres supports, à l’exclusion de ' +
+          'l’EuroGénération. Garder une poche d’unités de compte à côté sert donc de pare-chocs — mais ' +
+          'sur une allocation entièrement en euros, il n’y a rien d’autre où aller chercher l’argent.',
       },
       {
         genre: 'donnee',
         texte:
           'Le fonds Afer EuroGénération est né avec le contrat en 2025 : il n’a qu’une seule année ' +
           'd’historique, et rien ne permet d’en dégager une tendance.',
+      },
+      {
+        genre: 'donnee',
+        texte:
+          'Au terme des huit ans, la notice prévoit que l’épargne et la réserve sont arbitrées vers ' +
+          'le Fonds Garanti, et qu’un nouveau support fidélisant est proposé. Le simulateur ne le ' +
+          'modélise pas : il reconduit le taux de l’EuroGénération sur tout l’horizon et n’attribue ' +
+          'la majoration qu’une fois, à la fin. Au-delà de huit ans, il flatte donc ce contrat.',
       },
       {
         genre: 'univers',

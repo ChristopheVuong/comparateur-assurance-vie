@@ -1,9 +1,11 @@
 import {
   BORNES,
   ECHEANCES,
+  LIBELLES_DENOUEMENT,
   LIBELLES_PERIODICITE,
   LIBELLES_REBALANCEMENT,
   LIBELLES_SOURCE_TAUX,
+  type Denouement,
   type Hypotheses,
   type Periodicite,
   type Rebalancement,
@@ -11,6 +13,7 @@ import {
 } from '../lib/assuranceVie';
 import { CONTRATS } from '../lib/contrats';
 import { LIBELLES_FOYER, type Foyer } from '../lib/fiscalite';
+import { ABATTEMENT_757B, ABATTEMENT_990I, AGE_PIVOT } from '../lib/succession';
 import { CLASSES, LIBELLES_CLASSES, RENDEMENT_BRUT, type ClasseActif } from '../lib/supports';
 import { annees, eur, points, taux } from '../lib/format';
 import { Curseur, CurseurLog, Montant, Segments } from './Champs';
@@ -129,6 +132,26 @@ export function Saisie({
           hint="Le reste va sur le fonds en euros. Plusieurs contrats bonifient leur taux au-delà d’un seuil."
         />
 
+        <Segments<Denouement>
+          label="À l’arrivée"
+          valeur={h.denouement}
+          onChange={(v) => onChange('denouement', v)}
+          options={(['rachat', 'deces'] as const).map((d) => ({
+            valeur: d,
+            label: LIBELLES_DENOUEMENT[d].replace('Vous récupérez l’argent', 'Vous rachetez').replace(
+              'Vos bénéficiaires le reçoivent',
+              'Transmission',
+            ),
+          }))}
+          hint={
+            h.denouement === 'rachat'
+              ? 'Un rachat total au terme : la plus-value est imposée, et une réserve de fidélité non encore acquise est perdue.'
+              : `Le capital est réglé aux bénéficiaires. La plus-value échappe alors totalement à l’impôt sur le revenu — ce sont les droits de succession qui prennent le relais, sur une règle qui dépend de votre âge à chaque versement.`
+          }
+        />
+
+        {h.denouement === 'deces' && <Transmission h={h} onChange={onChange} />}
+
         <Segments<ClasseActif>
           label="Investies en"
           valeur={h.classeUC}
@@ -237,6 +260,86 @@ export function Saisie({
           </div>
         </details>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The three things a death benefit needs to know, and that a withdrawal never
+ * asks.
+ *
+ * Grouped in a block of their own rather than folded into the assumptions
+ * drawer, and shown only when they bite. The age is first because it is the one
+ * that moves the figure: on this rule a birthday is worth more than any fee
+ * schedule in the catalogue, and burying it under a fold would misrepresent
+ * which decision the reader is actually making.
+ */
+function Transmission({
+  h,
+  onChange,
+}: {
+  h: Hypotheses;
+  onChange: <K extends keyof Hypotheses>(cle: K, valeur: Hypotheses[K]) => void;
+}) {
+  const ageFinal = h.ageSouscription + h.horizon - 1;
+  const bascule = AGE_PIVOT - h.ageSouscription + 1;
+  const toutAvant = ageFinal < AGE_PIVOT;
+  const toutApres = h.ageSouscription >= AGE_PIVOT;
+
+  return (
+    <div className="space-y-6 rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-4">
+      <Curseur
+        label="Votre âge au premier versement"
+        valeur={h.ageSouscription}
+        min={BORNES.ageSouscription.min}
+        max={BORNES.ageSouscription.max}
+        pas={1}
+        onChange={(v) => onChange('ageSouscription', v)}
+        rendu={(v) => `${v} ans`}
+        saisie={{ suffixe: 'ans' }}
+        reperes={[
+          { valeur: 40, label: '40' },
+          { valeur: 70, label: '70 ans' },
+          { valeur: 90, label: '90' },
+        ]}
+        hint={
+          toutApres
+            ? `Tout est versé après 70 ans : l’abattement tombe à ${eur(ABATTEMENT_757B)} pour l’ensemble des bénéficiaires et de vos contrats — mais les gains, eux, sont exonérés de droits.`
+            : toutAvant
+              ? `Tout est versé avant 70 ans : chaque bénéficiaire reçoit ${eur(ABATTEMENT_990I)} hors droits, gains compris.`
+              : `Vos versements changent de régime à la ${bascule}ᵉ année. Avant : ${eur(ABATTEMENT_990I)} d’abattement par bénéficiaire. Après : ${eur(ABATTEMENT_757B)} pour tout le monde.`
+        }
+      />
+
+      <Curseur
+        label="Nombre de bénéficiaires"
+        valeur={h.beneficiaires}
+        min={BORNES.beneficiaires.min}
+        max={BORNES.beneficiaires.max}
+        pas={1}
+        onChange={(v) => onChange('beneficiaires', v)}
+        rendu={(v) => (v > 1 ? `${v} personnes` : '1 personne')}
+        hint={`L’abattement de ${eur(ABATTEMENT_990I)} vaut par bénéficiaire : les désigner nommément multiplie ce qui passe hors droits. Le conjoint ou partenaire de PACS, lui, est exonéré de tout — ce calcul suppose qu’ils ne le sont pas.`}
+      />
+
+      {!toutAvant && (
+        <Curseur
+          label="Taux de droits supposé après 70 ans"
+          valeur={Math.round(h.tauxDroitsSuccession * 1000) / 10}
+          min={BORNES.tauxDroitsSuccession.min * 100}
+          max={BORNES.tauxDroitsSuccession.max * 100}
+          pas={1}
+          onChange={(v) => onChange('tauxDroitsSuccession', v / 100)}
+          rendu={(v) => `${v} %`}
+          saisie={{ suffixe: '%', decimales: 1 }}
+          reperes={[
+            { valeur: 0, label: '0 — exonéré' },
+            { valeur: 20, label: '20 — enfant' },
+            { valeur: 45, label: '45' },
+          ]}
+          hint="Une hypothèse, jamais un calcul : ce que coûtent les primes versées après 70 ans dépend du lien de parenté et de tout ce que le bénéficiaire reçoit par ailleurs, ce qui n’est pas une propriété du contrat."
+        />
+      )}
     </div>
   );
 }

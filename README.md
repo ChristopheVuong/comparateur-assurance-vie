@@ -52,13 +52,57 @@ périodiquement.
 facture : les **20 € de droits d'adhésion** à l'association Afer, et les **0,01 % de frais sur
 encours** de Macif Épargne Vie.
 
-## Fiscalité modélisée
+## Deux façons de finir
 
-Seule la part de plus-value contenue dans un rachat est taxée, proportionnellement à la
-valeur du contrat. Après huit ans : abattement de 4 600 € (9 200 € pour un couple), puis
-7,5 % au prorata des primes sous 150 000 € et 12,8 % au-delà. Avant huit ans : 12,8 % sans
-abattement. Les prélèvements sociaux (17,2 %) sont retenus chaque année sur les intérêts du
-fonds en euros, à la sortie seulement sur les unités de compte.
+Le même plan peut se dénouer de deux manières, et l'outil chiffre les deux. Tout ce qui
+précède le dernier jour est identique — mêmes frais, mêmes poches, mêmes années, ce qu'un
+invariant vérifie année par année. Ce qui change est le dernier paragraphe.
+
+**Rachat.** Seule la part de plus-value contenue dans le rachat est taxée,
+proportionnellement à la valeur du contrat. Après huit ans : abattement de 4 600 €
+(9 200 € pour un couple), puis 7,5 % au prorata des primes sous 150 000 € et 12,8 % au-delà.
+Avant huit ans : 12,8 % sans abattement. Les prélèvements sociaux (17,2 %) sont retenus
+chaque année sur les intérêts du fonds en euros, à la sortie seulement sur les unités de
+compte.
+
+**Décès.** La plus-value ne rencontre jamais l'impôt sur le revenu. Restent les
+prélèvements sociaux, puis les droits de succession — sur une règle qui ne dépend pas de
+l'âge du contrat mais de **celui du souscripteur au moment de chaque versement** :
+
+| | Primes versées avant 70 ans (art. 990 I) | Primes versées après 70 ans (art. 757 B) |
+| --- | --- | --- |
+| Abattement | 152 500 € **par bénéficiaire** | 30 500 € **au total**, tous bénéficiaires confondus |
+| Porte sur | capital **et** gains | les **primes** seulement |
+| Au-delà | 20 %, puis 31,25 % au-delà de 700 000 € de part taxable | barème ordinaire des successions |
+
+Le contrat est coupé en deux au prorata des primes de part et d'autre de l'anniversaire.
+Le taux du barème ordinaire est une **hypothèse réglable**, jamais un calcul : ce que
+coûtent les primes versées après 70 ans dépend du lien de parenté et de tout ce que le
+bénéficiaire reçoit par ailleurs, dont un contrat d'assurance-vie ne sait rien. L'assiette
+est affichée à part pour que la multiplication soit refaisable.
+
+Un test défend le résultat le moins intuitif du lot : « verser avant 70 ans » est une règle
+de pouce et non une loi. Avec un seul bénéficiaire et une plus-value importante, l'article
+757 B — qui **exonère les gains** — peut coûter moins cher que le 990 I qui les taxe. La
+règle de pouce redevient vraie dès que plusieurs bénéficiaires sont nommés, puisque leurs
+abattements se multiplient et que celui du 757 B, lui, se partage.
+
+## Ce qui est réellement rachetable
+
+Sur un fonds à garantie de fidélité, la valeur affichée sur le relevé et la somme que l'on
+peut retirer sont deux nombres différents : la réserve n'est **pas rachetable**. Le moteur
+reporte les deux à chaque année (`valeurFin` et `valeurRachat`) plutôt que de laisser
+quelqu'un faire la soustraction.
+
+`coutRachatPartiel` chiffre alors ce qu'un retrait en cours de route coûterait, sur deux
+règles contractuelles et non arithmétiques :
+
+- **le retrait est servi dans l'ordre où le contrat le sert** — Afer Génération l'impute par
+  défaut sur tout sauf le fonds bloqué, donc une poche d'unités de compte détenue à côté
+  encaisse le choc en premier et la réserve n'en sait rien ;
+- **ce qui atteint la poche euros ampute la réserve au prorata de cette poche**, jamais en
+  totalité. C'est la sortie **complète** du fonds qui détruit tout, et l'écart entre les
+  deux est la seule question qui compte si un besoin d'argent survient avant le terme.
 
 ## Ce que le simulateur ne fait pas
 
@@ -74,6 +118,12 @@ fonds en euros, à la sortie seulement sur les unités de compte.
   sous le bandeau de résultat — elle n'entre dans aucun calcul et ne peut déplacer aucun
   classement, ce qu'un invariant vérifie. La revalorisation des versements est, elle, une
   augmentation nominale que l'utilisateur choisit, pas un suivi automatique des prix.
+- Il ne devine pas qui hérite : le conjoint survivant et le partenaire de PACS sont exonérés
+  de tout, et le calcul suppose des bénéficiaires qui ne le sont pas plutôt que de demander
+  un lien de parenté pour répondre zéro.
+- Il ne modélise pas ce qui suit le terme d'une garantie de fidélité — l'arbitrage vers le
+  Fonds Garanti et le support fidélisant suivant. Au-delà de huit ans, il flatte donc Afer
+  Génération, et le dit dans les réserves du contrat.
 - Il ne conseille pas et ne recommande aucun contrat.
 
 ## Démarrer

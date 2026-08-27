@@ -17,6 +17,7 @@ import {
   BORNES,
   DEFAUTS,
   borner,
+  type Denouement,
   type Hypotheses,
   type Periodicite,
   type Rebalancement,
@@ -39,6 +40,10 @@ const CLES = {
   sourceTaux: 'taux',
   rebalancement: 'equilibre',
   foyer: 'foyer',
+  denouement: 'fin',
+  ageSouscription: 'age',
+  beneficiaires: 'benef',
+  tauxDroitsSuccession: 'droits',
   detail: 'detail',
 } as const;
 
@@ -104,6 +109,19 @@ export function encoderEtat(
   ajouter(CLES.sourceTaux, etat.sourceTaux, defauts.sourceTaux);
   ajouter(CLES.rebalancement, etat.rebalancement, defauts.rebalancement);
   ajouter(CLES.foyer, etat.foyer, defauts.foyer);
+  ajouter(CLES.denouement, etat.denouement, defauts.denouement);
+  // Written only when they can move a figure. Under a withdrawal they are inert,
+  // and a link about a withdrawal that carried three succession parameters would
+  // be a link about decisions its author never made.
+  if (etat.denouement === 'deces') {
+    ajouter(CLES.ageSouscription, etat.ageSouscription, defauts.ageSouscription);
+    ajouter(CLES.beneficiaires, etat.beneficiaires, defauts.beneficiaires);
+    ajouter(
+      CLES.tauxDroitsSuccession,
+      arrondi(etat.tauxDroitsSuccession * 100, DECIMALES_TAUX),
+      arrondi(defauts.tauxDroitsSuccession * 100, DECIMALES_TAUX),
+    );
+  }
   if (contexte.detail) p.set(CLES.detail, contexte.detail);
 
   const requete = p.toString();
@@ -160,6 +178,27 @@ export function decoderEtat(recherche: string, defauts: Hypotheses = DEFAUTS): H
       const lu = p.get(CLES.foyer);
       return estFoyer(lu) ? lu : defauts.foyer;
     })(),
+    denouement: (p.get(CLES.denouement) ?? defauts.denouement) as Denouement,
+    ageSouscription: lireNombre(
+      p.get(CLES.ageSouscription),
+      defauts.ageSouscription,
+      BORNES.ageSouscription,
+    ),
+    beneficiaires: lireNombre(
+      p.get(CLES.beneficiaires),
+      defauts.beneficiaires,
+      BORNES.beneficiaires,
+    ),
+    tauxDroitsSuccession:
+      lireNombre(
+        p.get(CLES.tauxDroitsSuccession),
+        defauts.tauxDroitsSuccession * 100,
+        {
+          min: BORNES.tauxDroitsSuccession.min * 100,
+          max: BORNES.tauxDroitsSuccession.max * 100,
+        },
+        DECIMALES_TAUX,
+      ) / 100,
   };
   return borner(brut);
 }
