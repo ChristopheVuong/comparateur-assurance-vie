@@ -62,6 +62,11 @@ fonds en euros, à la sortie seulement sur les unités de compte.
   demandée ; il sort du tableau avec le motif.
 - Il ne projette pas les taux promotionnels au-delà de leur échéance ; il calcule
   séparément ce qu'une offre en cours vaudrait si elle était structurelle.
+- Il ne modélise pas l'inflation : tous les montants sont en **euros courants**, et la
+  revalorisation des versements est une augmentation nominale que l'utilisateur choisit,
+  pas un suivi automatique des prix. Cela ne change aucun classement — l'inflation frappe
+  tous ces contrats à l'identique — mais un capital affiché à vingt ans vaut nettement moins
+  que le même nombre aujourd'hui.
 - Il ne conseille pas et ne recommande aucun contrat.
 
 ## Démarrer

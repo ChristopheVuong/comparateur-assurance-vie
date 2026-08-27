@@ -208,7 +208,11 @@ export function Saisie({
               onChange={(v) => onChange('revalorisationVersements', v / 100)}
               rendu={(v) => `${v} %`}
               saisie={{ suffixe: '%', decimales: 1 }}
-              hint={`Augmentation annuelle de vos versements. À ${taux(h.revalorisationVersements)}, ils suivent à peu près l’inflation.`}
+              hint={
+                h.revalorisationVersements === 0
+                  ? 'Vos versements restent constants en euros, et perdent donc du pouvoir d’achat chaque année. Pour qu’ils suivent l’inflation, portez ce taux à celle que vous anticipez : le simulateur ne la connaît pas et ne la devinera pas.'
+                  : `Vos versements augmentent de ${taux(h.revalorisationVersements)} par an, en euros courants. C’est à vous de décider si ce taux suit l’inflation — le simulateur ne la modélise pas.`
+              }
             />
           </div>
         </details>
