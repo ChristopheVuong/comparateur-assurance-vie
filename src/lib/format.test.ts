@@ -16,6 +16,14 @@ describe('amounts', () => {
     expect(eur(Number.NaN)).toBe('0 €');
     expect(nombre(Number.POSITIVE_INFINITY)).toBe('0');
   });
+
+  it('never print a minus sign in front of nothing', () => {
+    // Negative zero survives Math.round and Intl renders it faithfully, which
+    // reads as a bug every time it lands on a reconciliation line.
+    expect(eur(-0)).toBe(eur(0));
+    expect(eur(-0.2)).toBe(eur(0));
+    expect(eur(-0)).not.toContain('−');
+  });
 });
 
 describe('differences', () => {

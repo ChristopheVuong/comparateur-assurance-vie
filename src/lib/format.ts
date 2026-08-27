@@ -33,13 +33,30 @@ const eurosPrecis = new Intl.NumberFormat('fr-FR', {
 
 const entiers = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 
+/**
+ * Below this, an amount prints as "0 €".
+ *
+ * A fact about `eur()` rather than about money: it rounds to the euro, so half
+ * a euro is exactly where a line stops carrying information and starts claiming
+ * an item cost nothing. Hiding such a line is honest; dropping it from a total
+ * is not — which is why totals are taken over the whole record and only the
+ * rows are filtered.
+ */
+export const SEUIL_EUR_VISIBLE = 0.5;
+
 function fini(valeur: number): number {
   return Number.isFinite(valeur) ? valeur : 0;
 }
 
-/** An amount, to the euro. */
+/**
+ * An amount, to the euro.
+ *
+ * The `|| 0` is not decoration: `Math.round` preserves negative zero, and
+ * `Intl` faithfully renders it as "−0 €" — a minus sign in front of nothing,
+ * which reads as an error every time.
+ */
 export function eur(valeur: number): string {
-  return euros.format(Math.round(fini(valeur))).replace(/-/g, MOINS);
+  return euros.format(Math.round(fini(valeur)) || 0).replace(/-/g, MOINS);
 }
 
 /** An amount with its cents, for the few places where they carry meaning. */

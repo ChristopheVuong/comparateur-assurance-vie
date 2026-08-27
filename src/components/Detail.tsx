@@ -1,8 +1,13 @@
-import type { ResultatAccessible } from '../lib/assuranceVie';
+import {
+  LIBELLES_GROUPE,
+  grouper,
+  totalFrais,
+  type ResultatAccessible,
+} from '../lib/assuranceVie';
 import { RESERVES_FISCALES } from '../lib/fiscalite';
-import { contrat, type GenreReserve } from '../lib/contrats';
+import { LIBELLES_GENRE_RESERVE, contrat, type GenreReserve } from '../lib/contrats';
 import { support } from '../lib/supports';
-import { eur, taux } from '../lib/format';
+import { SEUIL_EUR_VISIBLE, eur, taux } from '../lib/format';
 
 /**
  * Where the money went, for one contract.
@@ -18,13 +23,14 @@ import { eur, taux } from '../lib/format';
  * being printed for somebody saving for twenty years.
  */
 
-const TONS: Record<GenreReserve, { fond: string; texte: string; titre: string }> = {
-  promotion: { fond: 'bg-ambre-100', texte: 'text-ambre-700', titre: 'Offre temporaire' },
-  contrainte: { fond: 'bg-azur-100', texte: 'text-azur-600', titre: 'Contrainte' },
-  liquidite: { fond: 'bg-brique-100', texte: 'text-brique-700', titre: 'Disponibilité' },
-  univers: { fond: 'bg-brand-100', texte: 'text-brand-700', titre: 'Catalogue' },
-  donnee: { fond: 'bg-ink-100', texte: 'text-ink-600', titre: 'Réserve sur la donnée' },
-  fermeture: { fond: 'bg-ink-100', texte: 'text-ink-600', titre: 'Souscription' },
+/** Presentation only — what each kind of reservation is *called* lives in the catalogue. */
+const TONS: Record<GenreReserve, { fond: string; texte: string }> = {
+  promotion: { fond: 'bg-ambre-100', texte: 'text-ambre-700' },
+  contrainte: { fond: 'bg-azur-100', texte: 'text-azur-600' },
+  liquidite: { fond: 'bg-brique-100', texte: 'text-brique-700' },
+  univers: { fond: 'bg-brand-100', texte: 'text-brand-700' },
+  donnee: { fond: 'bg-ink-100', texte: 'text-ink-600' },
+  fermeture: { fond: 'bg-ink-100', texte: 'text-ink-600' },
 };
 
 export function Detail({ r }: { r: ResultatAccessible }) {
@@ -33,20 +39,20 @@ export function Detail({ r }: { r: ResultatAccessible }) {
   const fonds = c.fondsEuros.find((f) => f.cle === r.fondsRetenu) ?? c.fondsEuros[0];
   const derniere = r.annees.at(-1);
 
-  const tous = [
-    { libelle: 'Frais sur versement et adhésion', montant: r.coutsPreleves.versement + r.coutsPreleves.adhesion },
-    { libelle: 'Frais de gestion du contrat', montant: r.coutsPreleves.gestionContrat },
-    { libelle: 'Frais courants des supports', montant: r.coutsPreleves.support },
-    { libelle: 'Frais sur encours', montant: r.coutsPreleves.encours },
-    { libelle: 'Arbitrages', montant: r.coutsPreleves.arbitrage },
-    { libelle: 'Réserve de fidélité perdue', montant: r.coutsPreleves.provisionPerdue },
-  ];
-
-  // The total is taken over every line, including the ones too small to be
-  // worth a row: hiding a line and quietly dropping it from the sum is how a
-  // breakdown stops adding up.
-  const totalFrais = tous.reduce((s, p) => s + p.montant, 0);
-  const postes = tous.filter((p) => p.montant > 0.5);
+  // The lines come from the catalogue, not from a list written here: this panel
+  // once enumerated seven of eight items and summed its own list rather than
+  // the record, so a deduction existed that no total counted.
+  //
+  // The total is taken over every item, including the ones too small to earn a
+  // row — hiding a line and quietly dropping it from the sum is how a breakdown
+  // stops adding up.
+  const visible = (l: { montant: number }) => l.montant > SEUIL_EUR_VISIBLE;
+  const lignes = grouper(r.coutsPreleves, ['frais']).filter(visible);
+  const total = totalFrais(r.coutsPreleves);
+  // Kept out of the reconciliation below, and on purpose: a fee-free version of
+  // the same contract forfeits this reserve too, so it is not part of what the
+  // fees cost. Money lost all the same, hence its own line.
+  const penalites = grouper(r.coutsPreleves, ['penalite']).filter(visible);
 
   return (
     <div className="card p-6 sm:p-8">
@@ -73,17 +79,17 @@ export function Detail({ r }: { r: ResultatAccessible }) {
 
       <h4 className="mt-8 text-sm font-semibold text-ink-900">Où part l’argent</h4>
       <dl className="mt-3 space-y-2 text-sm">
-        {postes.map((p) => (
-          <div key={p.libelle} className="flex items-baseline gap-3">
-            <dt className="shrink-0 text-ink-600">{p.libelle}</dt>
+        {lignes.map((l) => (
+          <div key={l.groupe} className="flex items-baseline gap-3">
+            <dt className="shrink-0 text-ink-600">{LIBELLES_GROUPE[l.groupe]}</dt>
             <span className="h-px min-w-4 flex-1 self-end border-b border-dotted border-ink-200" />
-            <dd className="tabular shrink-0 font-medium text-ink-900">{eur(p.montant)}</dd>
+            <dd className="tabular shrink-0 font-medium text-ink-900">{eur(l.montant)}</dd>
           </div>
         ))}
         <div className="flex items-baseline gap-3 border-t border-ink-200 pt-2">
           <dt className="shrink-0 font-medium text-ink-700">Total prélevé</dt>
           <span className="h-px min-w-4 flex-1 self-end" />
-          <dd className="tabular shrink-0 font-semibold text-ink-900">{eur(totalFrais)}</dd>
+          <dd className="tabular shrink-0 font-semibold text-ink-900">{eur(total)}</dd>
         </div>
         <div className="flex items-baseline gap-3">
           <dt className="shrink-0 text-ink-600">
@@ -91,7 +97,7 @@ export function Detail({ r }: { r: ResultatAccessible }) {
           </dt>
           <span className="h-px min-w-4 flex-1 self-end border-b border-dotted border-ink-200" />
           <dd className="tabular shrink-0 font-medium text-ink-900">
-            {eur(r.coutFraisAvantImpot - totalFrais)}
+            {eur(r.coutFraisAvantImpot - total)}
           </dd>
         </div>
         <div className="flex items-baseline gap-3">
@@ -107,6 +113,31 @@ export function Detail({ r }: { r: ResultatAccessible }) {
         vous revient par une plus-value plus faible. Le coût final est donc inférieur à la somme
         prélevée augmentée du rendement perdu — sans cesser d’être un coût.
       </p>
+
+      {penalites.length > 0 && (
+        <div className="mt-4 rounded-xl border border-brique-100 bg-brique-50 px-4 py-3">
+          <dl className="space-y-1.5 text-sm">
+            {penalites.map((l) => (
+              <div key={l.groupe} className="flex items-baseline gap-3">
+                <dt className="shrink-0 font-medium text-brique-700">
+                  {LIBELLES_GROUPE[l.groupe]}
+                </dt>
+                <span className="h-px min-w-4 flex-1 self-end border-b border-dotted border-brique-200" />
+                <dd className="tabular shrink-0 font-semibold text-brique-700">
+                  {eur(l.montant)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 text-xs leading-relaxed text-ink-600">
+            Compté à part, et ce n’est pas une faveur faite au contrat : ce ne sont pas des frais.
+            Le même contrat sans aucun frais perdrait cette réserve tout autant, puisqu’elle tient
+            à la règle des huit ans et non à un tarif. Ce sont des intérêts que vous avez vu
+            s’accumuler et que vous ne toucherez pas — le taux mis en avant à la souscription
+            supposait que vous restiez.
+          </p>
+        </div>
+      )}
 
       {/* ------------------------------------- Composition */}
 
@@ -155,7 +186,7 @@ export function Detail({ r }: { r: ResultatAccessible }) {
                     TONS[res.genre].texte,
                   ].join(' ')}
                 >
-                  {TONS[res.genre].titre}
+                  {LIBELLES_GENRE_RESERVE[res.genre]}
                 </span>
                 <span className="text-ink-600">{res.texte}</span>
               </li>

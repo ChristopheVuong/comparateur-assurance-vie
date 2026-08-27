@@ -323,6 +323,192 @@ export type CoutsPreleves = {
   fiscalite: number;
 };
 
+// ---------------------------------------------------------------------------
+// What the deductions are, described once
+// ---------------------------------------------------------------------------
+
+export type Poste = keyof CoutsPreleves;
+
+/**
+ * How a deduction behaves over time, and therefore whether it composes a yearly
+ * rate at all.
+ *
+ * A union rather than a `recurrent: boolean`, because a boolean names one side
+ * and leaves the other to be inferred: at a declaration site `cadence:
+ * 'ponctuel'` reads as a decision, `recurrent: false` reads as an absence.
+ */
+export type CadencePoste = 'recurrent' | 'ponctuel';
+
+/**
+ * Who took the money, and what would have avoided it.
+ *
+ * Three kinds and not two, and the third was found by a test rather than by
+ * design — which is the useful part:
+ *
+ *  - `frais` — charged by the insurer, and **exactly what `sansFrais` removes**.
+ *    That is the operative definition: the fee-free yardstick these are measured
+ *    against is a contract with all of them at zero.
+ *  - `penalite` — lost to the contract's own rules rather than to a price list.
+ *    The fidelity reserve forfeited before its term is real money the saver
+ *    never sees, but a fee-free version of the same contract forfeits it too, so
+ *    it cancels out of what the fees cost and must not be counted among them.
+ *  - `impot` — taken by the state. Not what the contract costs.
+ *
+ * Each answers to a different counterfactual, which is why one total could not
+ * have covered all three.
+ */
+export type NaturePoste = 'frais' | 'penalite' | 'impot';
+
+/**
+ * What a reader is shown as one line.
+ *
+ * Entry fees and association dues are one group and not two: nobody who paid
+ * €20 to join and 0,5 % on the way in experiences those as separate events, and
+ * that decision belongs beside the model rather than inside a component.
+ */
+export type GroupePoste =
+  | 'entree'
+  | 'gestion'
+  | 'support'
+  | 'encours'
+  | 'arbitrage'
+  | 'fidelite'
+  | 'fiscalite';
+
+export const LIBELLES_GROUPE: Record<GroupePoste, string> = {
+  entree: 'Frais sur versement et adhésion',
+  gestion: 'Frais de gestion du contrat',
+  support: 'Frais courants des supports',
+  encours: 'Frais sur encours',
+  arbitrage: 'Arbitrages',
+  fidelite: 'Réserve de fidélité perdue',
+  fiscalite: 'Impôt et prélèvements sociaux',
+};
+
+/**
+ * Every line of `CoutsPreleves`, described once and in display order.
+ *
+ * `as const satisfies` buys both halves of what this has to do. `satisfies`
+ * makes the record exhaustive over `keyof CoutsPreleves`, so adding a field to
+ * the type without describing it here **fails to compile** — which is the whole
+ * point, because this table once listed seven of eight items and summed the
+ * list rather than the object, leaving a deduction no total counted. And
+ * `as const` keeps the literal types, so the recurring subset below is
+ * *derived* rather than restated.
+ *
+ * Declaration order is display order. There is deliberately no separate
+ * ordering array: a second list is a second thing that can be wrong, and this
+ * literal is already ordered and already exhaustive.
+ */
+export const POSTES = {
+  versement: { groupe: 'entree', cadence: 'ponctuel', nature: 'frais' },
+  adhesion: { groupe: 'entree', cadence: 'ponctuel', nature: 'frais' },
+  gestionContrat: { groupe: 'gestion', cadence: 'recurrent', nature: 'frais' },
+  support: { groupe: 'support', cadence: 'recurrent', nature: 'frais' },
+  encours: { groupe: 'encours', cadence: 'recurrent', nature: 'frais' },
+  arbitrage: { groupe: 'arbitrage', cadence: 'ponctuel', nature: 'frais' },
+  // Not a fee: the same contract with every fee at zero forfeits this reserve
+  // just the same, so it cancels out of what the fees cost. Money lost all the
+  // same, which is why it has a nature of its own instead of being dropped.
+  provisionPerdue: { groupe: 'fidelite', cadence: 'ponctuel', nature: 'penalite' },
+  // Settled at the exit, and not a fee: what the state takes is not what the
+  // contract costs. `cadence` answers one question only — does this compose the
+  // yearly rate — and for tax the answer is no.
+  fiscalite: { groupe: 'fiscalite', cadence: 'ponctuel', nature: 'impot' },
+} as const satisfies Record<
+  Poste,
+  { groupe: GroupePoste; cadence: CadencePoste; nature: NaturePoste }
+>;
+
+/**
+ * The items that compose a yearly rate, read off the catalogue.
+ *
+ * This is why `cadence` lives on `POSTES` rather than in an array of its own:
+ * it *generates* this type, which is the key set of `TauxAnnuel`, which
+ * `projeterContrat` must supply a literal for. Marking a new charge `recurrent`
+ * therefore breaks the build at the one place that knows what its rate is. A
+ * separate list could not do that — it would yield an `undefined` in the
+ * drawing and a missing factor in the capitalisation, which is a projection
+ * quietly understated in the saver's disfavour.
+ */
+export type PosteRecurrent = {
+  [P in Poste]: (typeof POSTES)[P]['cadence'] extends 'recurrent' ? P : never;
+}[Poste];
+
+export function postes(): Poste[] {
+  return Object.keys(POSTES) as Poste[];
+}
+
+export const POSTES_RECURRENTS: PosteRecurrent[] = postes().filter(
+  (p): p is PosteRecurrent => POSTES[p].cadence === 'recurrent',
+);
+
+/**
+ * The yearly charge borne on one pocket, item by item.
+ *
+ * This is the *definition* of the annual rate rather than a rendering of it:
+ * the engine capitalises with these numbers and the table draws these numbers,
+ * so a bar that disagreed with the figure printed beside it is not something
+ * the types allow anyone to write.
+ */
+export type TauxAnnuel = Record<PosteRecurrent, number>;
+
+export function sommeTaux(t: TauxAnnuel): number {
+  return POSTES_RECURRENTS.reduce((s, p) => s + t[p], 0);
+}
+
+/**
+ * Where a fee bar stops, as a yearly rate.
+ *
+ * A drawing bound and not a claim about the model: bars share one scale so that
+ * a longer bar is a dearer contract, full stop. Scaling each to its own total
+ * would make every row look alike; scaling to the dearest of the six would
+ * rescale the picture whenever the field changes, so a bar could shrink because
+ * its neighbours got worse. Two points a year covers the catalogue; the rare
+ * contract that runs past it is marked as overflowing rather than accommodated.
+ */
+export const ECHELLE_FRAIS_ANNUELS = 0.02;
+
+function total(couts: CoutsPreleves, natures: NaturePoste[]): number {
+  return postes().reduce((s, p) => s + (natures.includes(POSTES[p].nature) ? couts[p] : 0), 0);
+}
+
+/**
+ * What the insurer charged — and nothing else.
+ *
+ * The figure `coutFraisAvantImpot` is measured against, so it must cover
+ * exactly what the fee-free counterfactual removes. Adding the forfeited
+ * reserve here would compare a plan to a yardstick that forfeits it too.
+ */
+export function totalFrais(couts: CoutsPreleves): number {
+  return total(couts, ['frais']);
+}
+
+/** Everything that left the saver short of the taxman: fees and penalties both. */
+export function totalPreleve(couts: CoutsPreleves): number {
+  return total(couts, ['frais', 'penalite']);
+}
+
+/**
+ * What left the saver, folded into the lines a reader is shown, in catalogue
+ * order. Tax is excluded: it is reconciled separately, and it is not what the
+ * contract costs.
+ *
+ * A `Map` keeps insertion order, so the grouping inherits the declaration order
+ * of `POSTES` and no second ordering has to be maintained anywhere.
+ */
+export function grouper(
+  couts: CoutsPreleves,
+  natures: NaturePoste[] = ['frais', 'penalite'],
+): { groupe: GroupePoste; montant: number }[] {
+  const parGroupe = new Map<GroupePoste, number>();
+  for (const p of postes()) {
+    if (!natures.includes(POSTES[p].nature)) continue;
+    parGroupe.set(POSTES[p].groupe, (parGroupe.get(POSTES[p].groupe) ?? 0) + couts[p]);
+  }
+  return [...parGroupe].map(([groupe, montant]) => ({ groupe, montant }));
+}
+
 export type ResultatAccessible = {
   cle: CleContrat;
   accessible: true;
@@ -336,8 +522,26 @@ export type ResultatAccessible = {
   imposition: Imposition;
   psPayes: number;
   capitalNet: number;
-  /** Total yearly charge borne on the UC pocket: the contract's plus the fund's. */
+  /**
+   * Total yearly charge borne on the UC pocket: the contract's plus the fund's.
+   * Derived from `tauxAnnuelUC` and never added up a second time.
+   */
   fraisAnnuelsUC: number;
+  /** That same charge, item by item. Its sum is `fraisAnnuelsUC`, and a test says so. */
+  tauxAnnuelUC: TauxAnnuel;
+  /**
+   * The euro pocket's yearly charge. Near zero for almost every contract, and
+   * that is the honest figure rather than a flattering one: what the euro fund
+   * costs is already deducted from the rate it publishes.
+   */
+  tauxAnnuelEuros: TauxAnnuel;
+  /**
+   * The allocation that was projected, echoed back after clamping.
+   *
+   * Not `partUCFinale`, which is the share after returns and rebalancing have
+   * moved it. Telling whether a plan holds units at all needs the target.
+   */
+  partUCVisee: number;
   coutsPreleves: CoutsPreleves;
   /** The same plan on a contract with every fee at zero: the yardstick. */
   capitalNetSansFrais: number;
@@ -511,6 +715,26 @@ export function projeterContrat(
   const fgEurosApplique = fonds.conventionTaux === 'brut' ? c.fraisGestion.euros : 0;
   const fraisETF = support.partage === 'etf' ? c.fraisOperationETF : 0;
 
+  // Both pockets, priced once. These rates do not vary by year, and they are
+  // the single definition of the annual charge: capitalisation, the pro-rata
+  // split of what was deducted, and the table all read from here.
+  const tauxAnnuelUC: TauxAnnuel = {
+    gestionContrat: c.fraisGestion.uc,
+    support: support.ter,
+    encours: c.fraisSurEncours,
+  };
+  const tauxAnnuelEuros: TauxAnnuel = {
+    gestionContrat: fgEurosApplique,
+    // The euro fund holds no unit whose ongoing charge could be levied, and
+    // under `net-de-frais-de-gestion` the wrapper's own charge already sits
+    // inside the published rate. This zero is a statement, not a gap.
+    support: 0,
+    encours: c.fraisSurEncours,
+  };
+  const parts = (t: TauxAnnuel) => POSTES_RECURRENTS.map((poste) => ({ poste, taux: t[poste] }));
+  const partsEuros = parts(tauxAnnuelEuros);
+  const partsUC = parts(tauxAnnuelUC);
+
   let pocheE = 0;
   let pocheU = 0;
   let provision = 0;
@@ -572,15 +796,6 @@ export function projeterContrat(
     const { taux, rang } = tauxEuros(fonds, partUCReference, primes, h.sourceTaux);
 
     // ③ ④ Yearly factors, and capitalisation.
-    const partsEuros = [
-      { poste: 'encours' as const, taux: c.fraisSurEncours },
-      { poste: 'gestionContrat' as const, taux: fgEurosApplique },
-    ];
-    const partsUC = [
-      { poste: 'support' as const, taux: support.ter },
-      { poste: 'gestionContrat' as const, taux: c.fraisGestion.uc },
-      { poste: 'encours' as const, taux: c.fraisSurEncours },
-    ];
     const phi = (parts: { taux: number }[]) =>
       parts.reduce((p, x) => p * (1 - x.taux), 1);
 
@@ -728,7 +943,10 @@ export function projeterContrat(
     imposition,
     psPayes,
     capitalNet,
-    fraisAnnuelsUC: c.fraisGestion.uc + support.ter + c.fraisSurEncours,
+    fraisAnnuelsUC: sommeTaux(tauxAnnuelUC),
+    tauxAnnuelUC,
+    tauxAnnuelEuros,
+    partUCVisee: h.partUC,
     coutsPreleves: couts,
     reserves: c.reserves,
   };

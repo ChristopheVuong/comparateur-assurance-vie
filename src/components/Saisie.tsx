@@ -9,6 +9,7 @@ import {
   type Rebalancement,
   type SourceTaux,
 } from '../lib/assuranceVie';
+import { CONTRATS } from '../lib/contrats';
 import { LIBELLES_FOYER, type Foyer } from '../lib/fiscalite';
 import { CLASSES, LIBELLES_CLASSES, RENDEMENT_BRUT, type ClasseActif } from '../lib/supports';
 import { annees, eur, taux } from '../lib/format';
@@ -162,7 +163,7 @@ export function Saisie({
                 { valeur: 7, label: '7' },
                 { valeur: 15, label: '15' },
               ]}
-              hint="Avant tous frais, et volontairement le même pour les six contrats : un ETF et un fonds géré partent d’ici du même chiffre. Ce qui les sépare ensuite n’est que ce qu’on vous prélève dessus."
+              hint={`Avant tous frais, et volontairement le même pour les ${CONTRATS.length} contrats : un ETF et un fonds géré partent d’ici du même chiffre. Ce qui les sépare ensuite n’est que ce qu’on vous prélève dessus.`}
             />
 
             <Segments<Rebalancement>

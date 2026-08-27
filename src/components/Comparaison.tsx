@@ -1,7 +1,35 @@
-import { LIBELLES_MOTIF, type Resultat, type ResultatAccessible } from '../lib/assuranceVie';
+import {
+  LIBELLES_GROUPE,
+  LIBELLES_MOTIF,
+  POSTES,
+  POSTES_RECURRENTS,
+  sommeTaux,
+  type Resultat,
+  type ResultatAccessible,
+  type TauxAnnuel,
+} from '../lib/assuranceVie';
 import { contrat, type CleContrat } from '../lib/contrats';
 import { support } from '../lib/supports';
 import { eur, taux } from '../lib/format';
+import { BarreFrais, COULEURS_POSTES } from './BarreFrais';
+
+/**
+ * Which pocket the fee column is about.
+ *
+ * The column reports the unit-linked charge, because that is where fees are
+ * visible and where contracts actually differ. A plan holding no units would
+ * then be shown a rate it does not pay, so those rows report the euro pocket
+ * instead — not a dash, because `fraisSurEncours` is genuinely levied there and
+ * "small, so we hid it" is the move this whole tool exists to contradict.
+ *
+ * Deliberately not a blended rate. Almost every contract publishes its euro
+ * rate net of management fees, so the euro leg's zero is a fact about paperwork
+ * rather than about price: blending would print 0,00 % for a euro-only plan on
+ * a contract that does charge, and would make the column a property of the plan
+ * instead of a property of the contract.
+ */
+const tauxAnnuel = (r: ResultatAccessible): TauxAnnuel =>
+  r.partUCVisee === 0 ? r.tauxAnnuelEuros : r.tauxAnnuelUC;
 
 /**
  * The answer, one row per contract.
@@ -34,15 +62,16 @@ export function Comparaison({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[46rem] text-sm">
           <caption className="sr-only">
-            Capital net rendu par chaque contrat, à versements et allocation identiques
+            Capital net rendu par chaque contrat, à versements et allocation identiques, avec le
+            détail de leurs frais annuels
           </caption>
           <thead>
             <tr className="border-b border-ink-200 text-left text-xs uppercase tracking-wide text-ink-400">
               <th scope="col" className="px-5 py-3 font-medium">
                 Contrat
               </th>
-              <th scope="col" className="px-5 py-3 text-right font-medium">
-                Frais annuels
+              <th scope="col" className="whitespace-nowrap px-5 py-3 text-right font-medium">
+                Frais annuels des UC
               </th>
               <th scope="col" className="px-5 py-3 text-right font-medium">
                 Capital net
@@ -94,10 +123,21 @@ export function Comparaison({
                   </th>
 
                   <td className="tabular px-5 py-3 text-right align-top">
-                    <span className="text-ink-700">{taux(r.fraisAnnuelsUC)}</span>
-                    <span className="mt-0.5 block text-[11px] text-ink-400">
-                      dont {taux(s.ter)} de support
-                    </span>
+                    <span className="text-ink-700">{taux(sommeTaux(tauxAnnuel(r)))}</span>
+                    {r.partUCVisee === 0 && (
+                      <span className="mt-0.5 block text-[11px] text-ink-400">
+                        sur le fonds en euros
+                      </span>
+                    )}
+                    <BarreFrais
+                      cle={r.cle}
+                      tauxAnnuel={tauxAnnuel(r)}
+                      contexte={
+                        r.partUCVisee === 0
+                          ? 'Frais annuels du fonds en euros'
+                          : 'Frais annuels des unités de compte'
+                      }
+                    />
                   </td>
 
                   <td className="tabular px-5 py-3 text-right align-top font-semibold text-ink-900">
@@ -132,11 +172,26 @@ export function Comparaison({
         </table>
       </div>
 
-      <p className="border-t border-ink-200/70 bg-ink-50 px-5 py-4 text-xs leading-relaxed text-ink-500">
-        La colonne « frais annuels » additionne ce que prélève le contrat et ce que prélève le fonds
-        lui-même. C’est la seconde qui fait l’essentiel de l’écart, et c’est celle que les brochures
-        ne mettent jamais en avant. Cliquez une ligne pour voir où part l’argent.
-      </p>
+      <div className="border-t border-ink-200/70 bg-ink-50 px-5 py-4">
+        <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+          {POSTES_RECURRENTS.map((p) => (
+            <li key={p} className="flex items-center gap-1.5 text-xs text-ink-600">
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: COULEURS_POSTES[p] }}
+              />
+              {LIBELLES_GROUPE[POSTES[p].groupe]}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2.5 text-xs leading-relaxed text-ink-500">
+          Les barres partagent une même échelle : plus elle est longue, plus le contrat coûte cher à
+          détenir. Ce sont les frais des supports qui font l’essentiel de l’écart — la ligne que les
+          brochures ne mettent jamais en avant. Sur le fonds en euros, presque tous ces contrats
+          déduisent déjà leurs frais du taux qu’ils publient : un taux proche de zéro n’y est donc
+          pas une bonne nouvelle. Cliquez une ligne pour voir où part l’argent.
+        </p>
+      </div>
     </div>
   );
 }

@@ -17,7 +17,7 @@ export function Methode() {
       <div className="mx-auto max-w-6xl px-5 py-12 sm:py-16">
         <h2 className="text-2xl font-semibold tracking-tight text-ink-900">Méthode et sources</h2>
         <p className="mt-2 max-w-3xl leading-relaxed text-ink-500">
-          Le même plan est passé dans les six contrats. Tout ce que vous saisissez leur est
+          Le même plan est passé dans les {CONTRATS.length} contrats. Tout ce que vous saisissez leur est
           appliqué à l’identique ; ce qui diffère n’est que ce qu’on vous prélève. C’est ce qui
           fait de la réponse un prix, et non une prévision.
         </p>

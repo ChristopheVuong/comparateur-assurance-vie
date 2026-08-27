@@ -52,6 +52,15 @@ export type GenreReserve =
   | 'donnee'
   | 'fermeture';
 
+export const LIBELLES_GENRE_RESERVE: Record<GenreReserve, string> = {
+  promotion: 'Offre temporaire',
+  contrainte: 'Contrainte',
+  liquidite: 'Disponibilité',
+  univers: 'Catalogue',
+  donnee: 'Réserve sur la donnée',
+  fermeture: 'Souscription',
+};
+
 export type Reserve = { genre: GenreReserve; texte: string };
 
 export type Source = {

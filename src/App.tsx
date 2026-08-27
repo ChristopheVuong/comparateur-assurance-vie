@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { comparer, type Hypotheses, type ResultatAccessible } from './lib/assuranceVie'
-import { contrat, type CleContrat } from './lib/contrats'
+import { CONTRATS, contrat, type CleContrat } from './lib/contrats'
 import { decoderDetail, decoderEtat, encoderEtat, lienPartage } from './lib/url'
 import { annees, eur, taux } from './lib/format'
 import { Avertissement, Entete, Pied } from './components/Cadre'
@@ -98,7 +98,8 @@ export default function App() {
                 <div className="card overflow-hidden">
                   <div className="bg-brand-700 px-6 py-6 text-white sm:px-8">
                     <div className="text-sm text-brand-100">
-                      Le meilleur des six vous rend, net d’impôt, après {annees(h.horizon)}
+                      Le meilleur des {CONTRATS.length} contrats vous rend, net d’impôt, après{' '}
+                      {annees(h.horizon)}
                     </div>
                     <div className="tabular mt-1 text-4xl font-semibold sm:text-5xl">
                       {eur(tete.capitalNet)}

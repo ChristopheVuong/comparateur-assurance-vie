@@ -10,9 +10,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAUTS,
+  POSTES_RECURRENTS,
   borner,
   comparer,
+  postes,
   projeterContrat,
+  sommeTaux,
+  totalFrais,
+  totalPreleve,
   type Hypotheses,
   type ResultatAccessible,
 } from './assuranceVie';
@@ -122,13 +127,11 @@ describe('the accounting identity of a year', () => {
 });
 
 describe('what fees cost', () => {
-  const preleves = (r: ResultatAccessible) =>
-    r.coutsPreleves.versement +
-    r.coutsPreleves.adhesion +
-    r.coutsPreleves.gestionContrat +
-    r.coutsPreleves.support +
-    r.coutsPreleves.encours +
-    r.coutsPreleves.arbitrage;
+  // The engine's own total rather than a hand-written sum. The hand-written one
+  // silently dropped `provisionPerdue`, which is exactly the failure the
+  // catalogue exists to prevent — a list of items that can disagree with the
+  // record it claims to cover.
+  const preleves = (r: ResultatAccessible) => totalFrais(r.coutsPreleves);
 
   it('never leaves a contract better off than the same contract with no fees', () => {
     for (const { r } of TOUTES) {
@@ -149,6 +152,52 @@ describe('what fees cost', () => {
       const somme = preleves(r);
       if (somme > 1) expect(r.coutFraisAvantImpot).toBeGreaterThan(somme * 0.999);
     }
+  });
+
+  it('leaves nothing out of the totals it splits the deductions into', () => {
+    // What makes `nature` mean something: every item is a fee, a penalty or the
+    // tax, and adding a fourth kind without deciding which fails here rather
+    // than quietly falling out of every total.
+    for (const { r } of TOUTES) {
+      const tout = postes().reduce((s, p) => s + r.coutsPreleves[p], 0);
+      expect(totalPreleve(r.coutsPreleves) + r.coutsPreleves.fiscalite).toBeCloseTo(tout, 6);
+      expect(totalFrais(r.coutsPreleves)).toBeLessThanOrEqual(
+        totalPreleve(r.coutsPreleves) + 1e-9,
+      );
+    }
+  });
+
+  it('keeps a forfeited reserve out of what the fees cost', () => {
+    // The distinction the third nature exists for, asserted rather than
+    // assumed: `sansFrais` keeps the fidelity mechanism, so the yardstick
+    // forfeits the reserve too and the loss cancels. Counting it as a fee made
+    // this suite fail on Afer Génération at short horizons — correctly.
+    const court = sur({ horizon: 5, partUC: 0, rebalancement: 'aucun' });
+    const r = projeterContrat(court, contrat('afer-generation'));
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    expect(r.coutsPreleves.provisionPerdue).toBeGreaterThan(0);
+    expect(totalPreleve(r.coutsPreleves) - totalFrais(r.coutsPreleves)).toBeCloseTo(
+      r.coutsPreleves.provisionPerdue,
+      6,
+    );
+    expect(r.coutFraisAvantImpot).toBeLessThan(r.coutsPreleves.provisionPerdue);
+  });
+
+  it('breaks the yearly rate into parts that add back up to it', () => {
+    for (const { r } of TOUTES) {
+      expect(sommeTaux(r.tauxAnnuelUC)).toBeCloseTo(r.fraisAnnuelsUC, 12);
+      for (const p of POSTES_RECURRENTS) {
+        expect(r.tauxAnnuelUC[p]).toBeGreaterThanOrEqual(0);
+        expect(r.tauxAnnuelEuros[p]).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('never charges the euro pocket for a unit it does not hold', () => {
+    // The euro fund has no support whose ongoing charge could apply, so that
+    // term is structurally zero — not merely small.
+    for (const { r } of TOUTES) expect(r.tauxAnnuelEuros.support).toBe(0);
   });
 
   it('reconciles: what was deducted, plus the lost return, less the tax saved', () => {
