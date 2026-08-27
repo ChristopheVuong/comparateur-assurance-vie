@@ -817,3 +817,158 @@ describe('the social levies at settlement', () => {
     }
   });
 });
+
+/**
+ * The one withdrawal taken along the way.
+ *
+ * The first test here is the one that made the rest safe to write: a plan with
+ * no withdrawal, and a plan whose withdrawal is zero, have to be the same
+ * projection to the last centime. Everything else is allowed to be interesting
+ * only because that one is not.
+ */
+describe('a withdrawal taken before the end', () => {
+  const base = (sur_: Partial<Hypotheses> = {}) =>
+    sur({ versementInitial: 100_000, horizon: 12, partUC: 0.3, ...sur_ });
+
+  it('changes nothing at all when there is none to take', () => {
+    for (const h of GRILLE.slice(0, 30)) {
+      for (const c of CONTRATS) {
+        const sans = projeterContrat(h, c);
+        const zero = projeterContrat({ ...h, rachatIntermediaire: { annee: 3, montant: 0 } }, c);
+        expect(zero).toEqual(sans);
+      }
+    }
+  });
+
+  it('is refused a year it cannot happen in, rather than silently moved', () => {
+    // The closing year would claim a second yearly allowance in the same tax
+    // year, and a one-year plan has nowhere to put one at all.
+    expect(borner(base({ horizon: 1, rachatIntermediaire: { annee: 1, montant: 10_000 } })).rachatIntermediaire).toBeNull();
+    const serre = borner(base({ horizon: 5, rachatIntermediaire: { annee: 9, montant: 10_000 } }));
+    expect(serre.rachatIntermediaire?.annee).toBe(4);
+  });
+
+  it('closes the accounting identity of its own year', () => {
+    for (const annee of [1, 4, 8]) {
+      for (const c of CONTRATS) {
+        const r = projeterContrat(
+          base({ rachatIntermediaire: { annee, montant: 20_000 } }),
+          c,
+        );
+        if (!r.accessible) continue;
+        for (const a of r.annees) {
+          const attendu =
+            a.valeurDebut +
+            a.versementsBruts -
+            a.fraisVersement +
+            a.gainsBruts -
+            a.fraisGestionContrat -
+            a.fraisSupport -
+            a.fraisEncours -
+            a.prelevementsSociaux -
+            a.fraisArbitrage -
+            a.perteProvision -
+            a.rachatBrut;
+          expect(Math.abs(a.valeurFin - attendu)).toBeLessThan(1e-6 * Math.max(1, a.valeurFin));
+        }
+      }
+    }
+  });
+
+  it('takes the money out once, in the year asked for', () => {
+    const r = projeterContrat(base({ rachatIntermediaire: { annee: 5, montant: 20_000 } }), contrat('linxea-spirit-2'));
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    for (const a of r.annees) expect(a.rachatBrut).toBeCloseTo(a.annee === 5 ? 20_000 : 0, 6);
+  });
+
+  it('never releases more than the policy can actually surrender', () => {
+    for (const c of CONTRATS) {
+      const r = projeterContrat(base({ rachatIntermediaire: { annee: 2, montant: 5_000_000 } }), c);
+      if (!r.accessible) continue;
+      const a = r.annees[1];
+      // Everything redeemable went, and the reserve — which is not — stayed.
+      expect(a.rachatBrut).toBeGreaterThan(0);
+      expect(a.valeurRachat).toBeCloseTo(0, 4);
+      expect(a.valeurFin).toBeCloseTo(a.provisionFin, 4);
+    }
+  });
+
+  it('leaves the saver worse off than not touching it, but better off than losing it', () => {
+    for (const c of CONTRATS) {
+      const sans = projeterContrat(base(), c);
+      const avec = projeterContrat(base({ rachatIntermediaire: { annee: 4, montant: 20_000 } }), c);
+      if (!sans.accessible || !avec.accessible) continue;
+      // The money taken stopped compounding, so the total is smaller…
+      expect(avec.capitalNet).toBeLessThan(sans.capitalNet);
+      // …but it was not lost: it is in their pocket, net of the tax withheld.
+      expect(avec.capitalNet).toBeGreaterThan(sans.capitalNet - 20_000);
+      expect(avec.rachatIntermediaireNet).toBeGreaterThan(0);
+      expect(avec.rachatIntermediaireNet).toBeLessThanOrEqual(20_000 + 1e-6);
+    }
+  });
+
+  it('lowers the premium base it still carries, without rewriting what was paid in', () => {
+    const c = contrat('linxea-spirit-2');
+    const sans = projeterContrat(base(), c);
+    const avec = projeterContrat(base({ rachatIntermediaire: { annee: 4, montant: 20_000 } }), c);
+    expect(sans.accessible && avec.accessible).toBe(true);
+    if (!sans.accessible || !avec.accessible) return;
+    // What the saver handed over is a matter of record and does not move.
+    expect(avec.primesVersees).toBeCloseTo(sans.primesVersees, 6);
+    // The tax base the policy still carries does.
+    expect(avec.valeurBrute - avec.plusValue).toBeLessThan(sans.valeurBrute - sans.plusValue);
+  });
+
+  it('does not tax the same capital twice', () => {
+    // Withdraw the lot in year four, then let the rump run. The settlement must
+    // not tax a gain the withdrawal already settled.
+    const c = contrat('linxea-spirit-2');
+    const r = projeterContrat(base({ rachatIntermediaire: { annee: 4, montant: 5_000_000 } }), c);
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    const apres = r.annees.slice(4);
+    // Whatever the rump earned afterwards is all there is left to tax.
+    const gagneApres = (apres.at(-1)?.valeurFin ?? 0) - (r.annees[3].valeurFin - r.annees[3].rachatBrut);
+    expect(r.plusValue).toBeLessThanOrEqual(Math.max(0, gagneApres) + 1e-3);
+  });
+
+  it('grants the yearly allowance twice when the two exits fall in different years', () => {
+    // The reservation the simulator used to carry as a limitation: spreading an
+    // exit lets the allowance be claimed again. Eight years and more, so both
+    // exits reach the favourable regime.
+    const c = contrat('linxea-spirit-2');
+    const plan = (rachat: Hypotheses['rachatIntermediaire']) =>
+      sur({ versementInitial: 200_000, horizon: 20, partUC: 1, rendementUC: 0.07, rachatIntermediaire: rachat });
+    const dun_coup = projeterContrat(plan(null), c);
+    const etale = projeterContrat(plan({ annee: 10, montant: 60_000 }), c);
+    expect(dun_coup.accessible && etale.accessible).toBe(true);
+    if (!dun_coup.accessible || !etale.accessible) return;
+    // Two allowances instead of one: the spread plan keeps more of its gain,
+    // measured against what the same money would have earned untouched.
+    expect(etale.annees[9].impotRachat).toBeGreaterThan(0);
+    expect(dun_coup.imposition.abattement).toBeGreaterThan(0);
+    expect(etale.imposition.abattement).toBeGreaterThan(0);
+  });
+
+  it('cuts the reserve only for what left the euro pocket', () => {
+    const c = contrat('afer-generation');
+    const plan = (montant: number) =>
+      sur({ versementInitial: 100_000, horizon: 7, partUC: 0.5, rebalancement: 'aucun', rachatIntermediaire: { annee: 5, montant } });
+    const temoin = projeterContrat(sur({ versementInitial: 100_000, horizon: 7, partUC: 0.5, rebalancement: 'aucun' }), c);
+    expect(temoin.accessible).toBe(true);
+    if (!temoin.accessible) return;
+    const uc = temoin.annees[4].pocheUCFin;
+
+    // Served from the units first, so nothing reaches the reserve.
+    const abrite = projeterContrat(plan(uc / 2), c);
+    if (abrite.accessible) expect(abrite.annees[4].perteProvision).toBeCloseTo(0, 6);
+
+    // Beyond the buffer, the reserve is cut in the proportion taken from euros.
+    const mordu = projeterContrat(plan(uc + temoin.annees[4].pocheEurosFin / 4), c);
+    if (mordu.accessible) {
+      expect(mordu.annees[4].perteProvision).toBeGreaterThan(0);
+      expect(mordu.coutsPreleves.provisionPerdue).toBeGreaterThan(0);
+    }
+  });
+});

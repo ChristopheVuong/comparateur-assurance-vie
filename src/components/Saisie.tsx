@@ -152,6 +152,8 @@ export function Saisie({
 
         {h.denouement === 'deces' && <Transmission h={h} onChange={onChange} />}
 
+        <Retrait h={h} onChange={onChange} />
+
         <Segments<ClasseActif>
           label="Investies en"
           valeur={h.classeUC}
@@ -261,6 +263,68 @@ export function Saisie({
         </details>
       </div>
     </div>
+  );
+}
+
+/**
+ * The withdrawal taken along the way — off by default, and folded away until
+ * somebody asks for it.
+ *
+ * A checkbox would have been a third state to carry; instead the amount *is*
+ * the switch, because a withdrawal of nothing is no withdrawal, and the engine
+ * already reads it that way. Setting it back to zero turns the branch off
+ * completely, which an invariant pins.
+ */
+function Retrait({
+  h,
+  onChange,
+}: {
+  h: Hypotheses;
+  onChange: <K extends keyof Hypotheses>(cle: K, valeur: Hypotheses[K]) => void;
+}) {
+  const retrait = h.rachatIntermediaire;
+  const maxAnnee = Math.max(1, h.horizon - 1);
+  const annee = Math.min(retrait?.annee ?? Math.ceil(maxAnnee / 2), maxAnnee);
+
+  if (h.horizon < 2) return null;
+
+  return (
+    <details
+      open={retrait !== null}
+      className="group rounded-xl border border-ink-200 bg-ink-50/60 px-4 py-3"
+    >
+      <summary className="cursor-pointer list-none text-sm font-medium text-ink-700 transition hover:text-brand-700">
+        <span className="inline-block transition group-open:rotate-90">›</span> Retirer de
+        l’argent en cours de route
+      </summary>
+
+      <div className="mt-5 space-y-6">
+        <Montant
+          label="Montant du retrait"
+          valeur={retrait?.montant ?? 0}
+          onChange={(v) =>
+            onChange('rachatIntermediaire', v > 0 ? { annee, montant: v } : null)
+          }
+          min={BORNES.rachatIntermediaire.min}
+          max={BORNES.rachatIntermediaire.max}
+          placeholder="0"
+          hint="Un seul retrait, servi dans la limite de ce que le contrat peut réellement racheter — une réserve de fidélité n’en fait pas partie. À zéro, il n’y a pas de retrait du tout."
+        />
+
+        {retrait && (
+          <Curseur
+            label="Année du retrait"
+            valeur={annee}
+            min={1}
+            max={maxAnnee}
+            pas={1}
+            onChange={(v) => onChange('rachatIntermediaire', { annee: v, montant: retrait.montant })}
+            rendu={(v) => `année ${v}`}
+            hint={`L’argent retiré cesse de travailler, et l’impôt est dû à cette date : avant huit ans d’ancienneté, sans abattement. La sortie finale, elle, tombe une autre année fiscale et reprend le sien.`}
+          />
+        )}
+      </div>
+    </details>
   );
 }
 

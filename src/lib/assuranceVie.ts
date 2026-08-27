@@ -120,6 +120,26 @@ export type SourceTaux = 'derniere-annee' | 'moyenne-historique';
  */
 export type Denouement = 'rachat' | 'deces';
 
+/**
+ * One withdrawal taken along the way, before the policy is finally settled.
+ *
+ * **One, and not a schedule.** A plan of recurring withdrawals doubles the
+ * state the engine has to carry — three counters that must all decrease in step
+ * — and buys very little the single event does not already show. The question
+ * people actually have is *what if we need thirty thousand in year five*, and
+ * that is this shape.
+ *
+ * It is `null` by default and, when null, the engine takes no branch at all:
+ * an invariant checks that a withdrawal of zero reproduces the plain projection
+ * to the last centime, which is what makes the rest of this safe to add.
+ */
+export type RachatIntermediaire = {
+  /** Year it is taken, at the close of that year. Never the horizon itself. */
+  annee: number;
+  /** Amount asked for. Served up to what the policy can actually release. */
+  montant: number;
+};
+
 export type Hypotheses = {
   /** V₀ — initial payment, in euros. Weighed against each contract's ticket. */
   versementInitial: number;
@@ -185,6 +205,21 @@ export type Hypotheses = {
    * neither of which is a property of an insurance contract. See `succession.ts`.
    */
   tauxDroitsSuccession: number;
+  /**
+   * A single withdrawal taken before the end, or `null` for a plan left alone.
+   *
+   * Placed at the close of its year and **before** the yearly rebalancing, so
+   * that the year still ends on the allocation the user asked for and the
+   * accounting identity closes on a single withdrawal rather than on a
+   * withdrawal plus the drift it caused.
+   *
+   * That ordering makes one interaction visible rather than hiding it: on a
+   * contract whose euro fund locks interest away, taking money out and then
+   * putting the allocation back costs the reserve **twice** — once for what
+   * leaves the euro pocket, once for what the arbitrage moves back out of it.
+   * That is what the contract does, and there is already an alert saying so.
+   */
+  rachatIntermediaire: RachatIntermediaire | null;
 };
 
 export const BORNES = {
@@ -204,6 +239,7 @@ export const BORNES = {
   ageSouscription: { min: 0, max: 95 },
   beneficiaires: { min: 1, max: 10 },
   tauxDroitsSuccession: { min: 0, max: 0.6 },
+  rachatIntermediaire: { min: 0, max: 5_000_000 },
 } as const;
 
 export const DEFAUTS: Hypotheses = {
@@ -236,6 +272,7 @@ export const DEFAUTS: Hypotheses = {
   ageSouscription: 60,
   beneficiaires: 1,
   tauxDroitsSuccession: TAUX_DROITS_DEFAUT,
+  rachatIntermediaire: null,
 };
 
 export const ECHEANCES: Record<Periodicite, number> = {
@@ -283,6 +320,8 @@ function borne(valeur: number, { min, max }: { min: number; max: number }): numb
  * interface, at the moment the user changes class.
  */
 export function borner(hypotheses: Hypotheses): Hypotheses {
+  // Clamped first, because the withdrawal's year is held inside it.
+  const horizon = Math.round(borne(hypotheses.horizon, BORNES.horizon));
   return {
     versementInitial: borne(hypotheses.versementInitial, BORNES.versementInitial),
     versementProgramme: borne(hypotheses.versementProgramme, BORNES.versementProgramme),
@@ -292,7 +331,7 @@ export function borner(hypotheses: Hypotheses): Hypotheses {
       BORNES.revalorisationVersements,
     ),
     inflation: borne(hypotheses.inflation, BORNES.inflation),
-    horizon: Math.round(borne(hypotheses.horizon, BORNES.horizon)),
+    horizon,
     partUC: borne(hypotheses.partUC, BORNES.partUC),
     classeUC: estClasseActif(hypotheses.classeUC) ? hypotheses.classeUC : 'actions-monde',
     rendementUC: borne(hypotheses.rendementUC, BORNES.rendementUC),
@@ -310,7 +349,27 @@ export function borner(hypotheses: Hypotheses): Hypotheses {
       hypotheses.tauxDroitsSuccession,
       BORNES.tauxDroitsSuccession,
     ),
+    rachatIntermediaire: bornerRachat(hypotheses.rachatIntermediaire, horizon),
   };
+}
+
+/**
+ * A mid-course withdrawal, held strictly inside the horizon.
+ *
+ * The last year is excluded on purpose, and it removes an edge case rather than
+ * a feature: a withdrawal on the closing day is arithmetically the same event
+ * as settling for less, but it would claim a second yearly allowance in the
+ * same tax year — which is precisely the trick the allowance rule exists to
+ * prevent. A one-year plan therefore has nowhere to put one, and gets `null`.
+ */
+function bornerRachat(
+  rachat: RachatIntermediaire | null | undefined,
+  horizon: number,
+): RachatIntermediaire | null {
+  if (!rachat || horizon < 2) return null;
+  const montant = borne(rachat.montant, BORNES.rachatIntermediaire);
+  if (montant <= 0) return null;
+  return { annee: Math.round(borne(rachat.annee, { min: 1, max: horizon - 1 })), montant };
 }
 
 /**
@@ -421,8 +480,15 @@ export type AnneeContrat = {
   fraisEncours: number;
   prelevementsSociaux: number;
   fraisArbitrage: number;
-  /** Fidelity provision forfeited by arbitraging out of the euro pocket. */
+  /**
+   * Fidelity provision forfeited this year — by arbitraging out of the euro
+   * pocket, by withdrawing from it, or by both in the same year.
+   */
   perteProvision: number;
+  /** Gross amount actually released by the mid-course withdrawal. Zero elsewhere. */
+  rachatBrut: number;
+  /** Tax withheld on that withdrawal. Paid by the saver, not by the policy. */
+  impotRachat: number;
   valeurFin: number;
   /**
    * What could actually be taken out at the close of this year, which is not
@@ -715,6 +781,15 @@ export type ResultatAccessible = {
   /** What that reserve was finally worth: uplifted, handed over, or forfeited. */
   provisionAcquise: number;
   /**
+   * Cash the saver already took, net of the tax withheld on it.
+   *
+   * Included in `capitalNet`, because a plan that handed over €30,000 in year
+   * five has not lost them — and excluding it would make any plan with a
+   * withdrawal look strictly worse than one without, which is a comparison of
+   * nothing. Counted at face value: the engine does not know what became of it.
+   */
+  rachatIntermediaireNet: number;
+  /**
    * What a full surrender would have released on the last day, reserve
    * excluded — the liquidity figure, as opposed to the settlement figure.
    */
@@ -920,10 +995,24 @@ export function projeterContrat(
   // The settlement needs the base rather than the tax: netting a rate against
   // an amount is exactly the mistake `assiettePSALaSortie` exists to prevent.
   let assiettePSPayee = 0;
+  // Cash already in the saver's hands, net of the tax withheld on it. Counted
+  // at face value at the end: what they did with it afterwards is not something
+  // this simulator can know, and inventing a reinvestment would be a forecast.
+  let rachatNetPercu = 0;
+  // Two premium counters, and they part company the moment money comes out.
+  //
+  //  - `primesVersees` is what the saver actually handed over. It only ever
+  //    grows, and it is the figure shown next to "vous avez versé".
+  //  - `primes` is the tax base the policy still carries. A withdrawal takes
+  //    its share of the capital with it, so this one *falls*.
+  //
+  // They were one variable until a withdrawal could happen, and merging them
+  // again would either understate what was paid in or tax a capital twice.
+  let primesVersees = 0;
   let primes = 0;
   // Tracked in the loop rather than derived afterwards: the split depends on
   // the year each payment fell in, and once the loop has run that information
-  // is gone — `primes` is a single number by then.
+  // is gone — `primesVersees` is a single number by then.
   let primesAvant70 = 0;
 
   const couts: CoutsPreleves = {
@@ -948,6 +1037,7 @@ export function projeterContrat(
     // ① Payments. Association dues are taken out of the first payment and never
     //    invested; they are not a premium, so they stay out of the tax base too.
     const brut = versementDeLAnnee(h, annee);
+    primesVersees += brut;
     primes += brut;
     if (avantSoixanteDix(h, annee)) primesAvant70 += brut;
     const investissable = Math.max(0, brut - (annee === 1 ? c.droitsAdhesion : 0));
@@ -979,7 +1069,7 @@ export function projeterContrat(
     // the prudent side.
     const assiettePart = pocheE + pocheU + provision;
     const partUCReference = assiettePart > 0 ? pocheU / assiettePart : h.partUC;
-    const { taux, rang } = tauxEuros(fonds, partUCReference, primes, h.sourceTaux);
+    const { taux, rang } = tauxEuros(fonds, partUCReference, primesVersees, h.sourceTaux);
 
     // ③ ④ Yearly factors, and capitalisation.
     const phi = (parts: { taux: number }[]) =>
@@ -1024,10 +1114,69 @@ export function projeterContrat(
     psPayes += ps;
     assiettePSPayee += assiettePS;
 
-    // ⑦ Rebalancing, last, so the year closes on the target and the drift
+    // ⑦ The one withdrawal, if this is its year.
+    //
+    //    Everything it touches scales by the same fraction, and that is the
+    //    whole correctness argument: the slice taken carries its share of the
+    //    gain, of the premiums, of the levies already paid and of the base they
+    //    were charged on. Letting any one of those drift out of step is how a
+    //    settlement quietly stops matching the tax it already collected — the
+    //    exact failure this engine has already had once.
+    let rachatBrut = 0;
+    let impotRachat = 0;
+    let perteProvisionRachat = 0;
+    if (h.rachatIntermediaire && h.rachatIntermediaire.annee === annee) {
+      // The reserve is not redeemable, so it is neither on the table nor in the
+      // denominator: every tax rule below reads the *surrender* value, which is
+      // what the insurer reports and what the administration proportions on.
+      const disponible = pocheE + pocheU;
+      rachatBrut = Math.min(h.rachatIntermediaire.montant, disponible);
+
+      if (rachatBrut > 0) {
+        const imposition = imposer({
+          rachat: rachatBrut,
+          valeur: disponible,
+          primes,
+          anciennete: annee,
+          foyer: h.foyer,
+          psDejaPayes: psPayes,
+          assiettePSPayee,
+        });
+        impotRachat = imposition.total;
+        couts.fiscalite += impotRachat;
+        rachatNetPercu += rachatBrut - impotRachat;
+
+        // Served in the order the contract serves it: where the default spares
+        // the locked fund, the unit-linked pocket takes the blow first.
+        const surUnites =
+          provisionDe?.imputationRachat === 'unites-d-abord'
+            ? Math.min(rachatBrut, pocheU)
+            : Math.min(rachatBrut, Math.max(0, rachatBrut - pocheE));
+        const surEuros = rachatBrut - surUnites;
+
+        if (provisionDe && provision > 0 && pocheE > 0) {
+          perteProvisionRachat = provision * Math.min(1, surEuros / pocheE);
+          provision -= perteProvisionRachat;
+          couts.provisionPerdue += perteProvisionRachat;
+        }
+
+        pocheU -= surUnites;
+        pocheE -= surEuros;
+
+        // The counters follow the slice, on the same denominator the tax used.
+        const part = disponible > 0 ? rachatBrut / disponible : 0;
+        const reste = 1 - part;
+        primes *= reste;
+        primesAvant70 *= reste;
+        psPayes *= reste;
+        assiettePSPayee *= reste;
+      }
+    }
+
+    // ⑧ Rebalancing, last, so the year closes on the target and the drift
     //    measured during it is real rather than an artefact of ordering.
     let fraisArbitrage = 0;
-    let perteProvision = 0;
+    let perteProvision = perteProvisionRachat;
     if (h.rebalancement === 'annuel') {
       const total = pocheE + pocheU + provision;
       const cibleUC = h.partUC * total;
@@ -1041,12 +1190,15 @@ export function projeterContrat(
         fraisArbitrage = gratuit ? 0 : Math.abs(delta) * c.arbitrage.taux;
         fraisArbitrage += Math.abs(delta) * fraisETF;
 
+        let perteRebalancement = 0;
         if (delta > 0 && provision > 0 && pocheE > 0) {
           // Money leaving the euro pocket takes its share of the fidelity
           // provision with it — the hidden cost of rebalancing a contract
-          // whose euro fund locks its interest away.
-          perteProvision = provision * Math.min(1, delta / pocheE);
-          provision -= perteProvision;
+          // whose euro fund locks its interest away. Added to what a withdrawal
+          // may already have cost this year, never substituted for it.
+          perteRebalancement = provision * Math.min(1, delta / pocheE);
+          provision -= perteRebalancement;
+          perteProvision += perteRebalancement;
         }
 
         pocheU += delta;
@@ -1055,7 +1207,7 @@ export function projeterContrat(
         pocheU -= retenue;
         fraisArbitrage = retenue;
         couts.arbitrage += fraisArbitrage;
-        couts.provisionPerdue += perteProvision;
+        couts.provisionPerdue += perteRebalancement;
       }
     }
 
@@ -1079,9 +1231,11 @@ export function projeterContrat(
       prelevementsSociaux: ps,
       fraisArbitrage,
       perteProvision,
+      rachatBrut,
+      impotRachat,
       valeurFin: pocheE + pocheU + provision,
       valeurRachat: pocheE + pocheU,
-      primesCumulees: primes,
+      primesCumulees: primesVersees,
     });
   }
 
@@ -1134,7 +1288,9 @@ export function projeterContrat(
           psDejaPayes: psPayes,
           assiettePSPayee,
         });
-  couts.fiscalite = imposition.total + psPayes;
+  // `+=` and not `=`: a mid-course withdrawal has already paid tax into this
+  // line, and an assignment here would erase it.
+  couts.fiscalite += imposition.total + psPayes;
 
   // Duties bite on what is left once the social levies are settled, which is
   // the order the two are actually taken in.
@@ -1150,7 +1306,9 @@ export function projeterContrat(
       : null;
   couts.succession = succession?.total ?? 0;
 
-  const capitalNet = valeurBrute - imposition.total - couts.succession;
+  // What the saver — or the beneficiaries — end up with in total: the
+  // settlement, plus whatever was already taken out and kept along the way.
+  const capitalNet = valeurBrute - imposition.total - couts.succession + rachatNetPercu;
   const valeurFinale = pocheE + pocheU + provisionAcquise;
 
   const base: Omit<
@@ -1167,7 +1325,7 @@ export function projeterContrat(
     supportRetenu: support.cle,
     annees,
     valeurBrute,
-    primesVersees: primes,
+    primesVersees,
     plusValue,
     partUCFinale: valeurFinale > 0 ? pocheU / valeurFinale : 0,
     imposition,
@@ -1182,6 +1340,7 @@ export function projeterContrat(
     partUCVisee: h.partUC,
     provisionFin: provision,
     provisionAcquise,
+    rachatIntermediaireNet: rachatNetPercu,
     valeurRachatFin: pocheE + pocheU,
     coutsPreleves: couts,
     reserves: c.reserves,
@@ -1225,7 +1384,7 @@ export function projeterContrat(
     manqueAGagner: capitalNetSansFrais - capitalNet,
     coutFraisAvantImpot: avantImpotSansFrais - avantImpot,
     gainPromotionnel,
-    alertes: alerter(h, c, { fonds, support, gainPromotionnel, primes, expiree }),
+    alertes: alerter(h, c, { fonds, support, gainPromotionnel, primes: primesVersees, expiree }),
   };
 }
 

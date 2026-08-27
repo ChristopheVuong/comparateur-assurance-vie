@@ -44,6 +44,8 @@ const CLES = {
   ageSouscription: 'age',
   beneficiaires: 'benef',
   tauxDroitsSuccession: 'droits',
+  rachatAnnee: 'retrait-an',
+  rachatMontant: 'retrait',
   detail: 'detail',
 } as const;
 
@@ -122,6 +124,12 @@ export function encoderEtat(
       arrondi(defauts.tauxDroitsSuccession * 100, DECIMALES_TAUX),
     );
   }
+  // Both keys or neither: a year without an amount describes no withdrawal,
+  // and an amount without a year has nowhere to happen.
+  if (etat.rachatIntermediaire) {
+    p.set(CLES.rachatMontant, String(Math.round(etat.rachatIntermediaire.montant)));
+    p.set(CLES.rachatAnnee, String(etat.rachatIntermediaire.annee));
+  }
   if (contexte.detail) p.set(CLES.detail, contexte.detail);
 
   const requete = p.toString();
@@ -199,6 +207,15 @@ export function decoderEtat(recherche: string, defauts: Hypotheses = DEFAUTS): H
         },
         DECIMALES_TAUX,
       ) / 100,
+    rachatIntermediaire: (() => {
+      const montant = p.get(CLES.rachatMontant);
+      if (montant === null) return defauts.rachatIntermediaire;
+      return {
+        montant: lireNombre(montant, 0, BORNES.rachatIntermediaire),
+        // Clamped against the horizon by `borner`, which owns that rule.
+        annee: lireNombre(p.get(CLES.rachatAnnee), 1, BORNES.horizon),
+      };
+    })(),
   };
   return borner(brut);
 }

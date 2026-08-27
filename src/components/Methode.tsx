@@ -51,12 +51,19 @@ export function Methode() {
                 lui aussi. Sur les unités de compte, ils n’interviennent qu’à la sortie.
               </Etape>
               <Etape n={6}>
+                Un <strong>retrait en cours de route</strong>, s’il y en a un, est prélevé à la
+                clôture de son année et avant le rééquilibrage. Il emporte sa quote-part de tout :
+                de la plus-value qu’il fait imposer, des primes, des prélèvements déjà payés et de
+                l’assiette sur laquelle ils ont porté. Il tombe sur une <strong>autre année
+                fiscale</strong> que la sortie finale, et reprend donc son propre abattement.
+              </Etape>
+              <Etape n={7}>
                 Si le plan se termine par un <strong>rachat</strong>, seule la{' '}
                 <strong>part de plus-value</strong> qu’il contient est taxée : abattement de
                 4 600 € ou 9 200 € après huit ans, puis 7,5 % au prorata des primes sous 150 000 €
                 et 12,8 % au-delà.
               </Etape>
-              <Etape n={7}>
+              <Etape n={8}>
                 S’il se termine par un <strong>décès</strong>, la plus-value ne rencontre{' '}
                 <strong>jamais l’impôt sur le revenu</strong>. Restent les prélèvements sociaux,
                 puis les droits de succession : le contrat est coupé au prorata des primes versées
@@ -99,6 +106,11 @@ export function Methode() {
                 Un taux unique est reconduit sur tout l’horizon. Aucun assureur ne s’engage sur le
                 taux de l’année suivante, et plusieurs de ces fonds ont déjà varié d’un demi-point
                 d’une année sur l’autre.
+              </Limite>
+              <Limite titre="Étaler une sortie sur plusieurs années.">
+                Un seul retrait est modélisé, puis la sortie finale. Chacun reprend l’abattement
+                annuel, mais une sortie étalée sur cinq ou dix ans le reprendrait autant de fois :
+                le chiffre affiché est un plancher, jamais un optimum fiscal.
               </Limite>
               <Limite titre="Chiffrer seul les droits dus après 70 ans.">
                 Les primes versées après 70 ans suivent le barème ordinaire des successions, qui

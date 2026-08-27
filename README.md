@@ -87,6 +87,29 @@ de pouce et non une loi. Avec un seul bénéficiaire et une plus-value important
 règle de pouce redevient vraie dès que plusieurs bénéficiaires sont nommés, puisque leurs
 abattements se multiplient et que celui du 757 B, lui, se partage.
 
+## Un retrait en cours de route
+
+Un seul, `rachatIntermediaire: { annee, montant }`, prélevé à la clôture de son année et
+avant le rééquilibrage — pour que l'année se ferme sur l'allocation demandée et que
+l'identité comptable se referme sur un retrait plutôt que sur un retrait plus la dérive
+qu'il a causée.
+
+Il emporte **sa quote-part de tout** : de la plus-value qu'il fait imposer, des primes, des
+prélèvements sociaux déjà payés et de l'assiette sur laquelle ils ont porté. Ces trois
+compteurs doivent descendre du même pas — c'est là qu'est toute la difficulté, et c'est la
+famille de bug qui s'est déjà produite ici une fois. Deux compteurs de primes coexistent
+depuis : `primesVersees`, ce que l'épargnant a réellement versé et qui ne fait que croître,
+et la base fiscale que le contrat porte encore, qui elle décroît.
+
+Ce que le retrait rapporte au modèle : **l'abattement annuel repris** (les deux sorties
+tombent sur deux années fiscales différentes), le **rendement perdu** sur l'argent sorti, et
+un **règlement final sur une base réduite**. `capitalNet` compte la somme déjà encaissée à
+sa valeur faciale — l'exclure ferait paraître tout plan avec retrait strictement pire, ce
+qui ne compare rien ; la réinvestir serait une prévision.
+
+L'invariant qui rend le reste sûr : **un retrait nul reproduit la projection ordinaire au
+centime près**, sur toute la grille et tous les contrats.
+
 ## Ce qui est réellement rachetable
 
 Sur un fonds à garantie de fidélité, la valeur affichée sur le relevé et la somme que l'on
@@ -118,6 +141,9 @@ règles contractuelles et non arithmétiques :
   sous le bandeau de résultat — elle n'entre dans aucun calcul et ne peut déplacer aucun
   classement, ce qu'un invariant vérifie. La revalorisation des versements est, elle, une
   augmentation nominale que l'utilisateur choisit, pas un suivi automatique des prix.
+- Il n'étale pas une sortie : un seul retrait, puis le dénouement. Chacun reprend
+  l'abattement annuel, mais une sortie étalée sur dix ans le reprendrait dix fois — le
+  chiffre affiché est un plancher, pas un optimum fiscal.
 - Il ne devine pas qui hérite : le conjoint survivant et le partenaire de PACS sont exonérés
   de tout, et le calcul suppose des bénéficiaires qui ne le sont pas plutôt que de demander
   un lien de parenté pour répondre zéro.

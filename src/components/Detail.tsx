@@ -161,6 +161,8 @@ export function Detail({ r }: { r: ResultatAccessible }) {
         </div>
       )}
 
+      <Retrait r={r} />
+
       {r.succession && <Transmission r={r} />}
 
       <Liquidite r={r} />
@@ -264,6 +266,43 @@ export function Detail({ r }: { r: ResultatAccessible }) {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The withdrawal taken along the way, shown because otherwise the headline
+ * figure stops adding up.
+ *
+ * `capitalNet` counts the cash already pocketed, and a reader who cannot see
+ * that line has no way to reconcile a total that exceeds what the policy is
+ * finally worth. The reserve forfeited to it is named here too, next to the
+ * event that caused it, rather than only in the penalty box further down.
+ */
+function Retrait({ r }: { r: ResultatAccessible }) {
+  const a = r.annees.find((x) => x.rachatBrut > 0);
+  if (!a) return null;
+  const demande = a.rachatBrut;
+
+  return (
+    <>
+      <h4 className="mt-8 text-sm font-semibold text-ink-900">
+        Le retrait de l’année {a.annee}
+      </h4>
+      <dl className="mt-3 space-y-2 text-sm">
+        <Poste terme="Retiré du contrat" montant={demande} />
+        <Poste terme="Impôt et prélèvements retenus dessus" montant={a.impotRachat} sourdine />
+        {a.perteProvision > SEUIL_EUR_VISIBLE && (
+          <Poste terme="Réserve de fidélité amputée au passage" montant={a.perteProvision} sourdine />
+        )}
+        <Poste terme="Encaissé, net" montant={r.rachatIntermediaireNet} ton="jade" />
+      </dl>
+      <p className="field-hint mt-3">
+        Cette somme est comptée dans le total ci-dessus, à sa valeur faciale : le simulateur ne
+        sait pas ce qu’elle est devenue ensuite et n’allait pas l’inventer. Ce qu’elle coûte
+        vraiment est le rendement qu’elle n’a plus produit jusqu’au terme — visible en comparant
+        avec un plan qu’on ne touche pas.
+      </p>
+    </>
+  );
+}
 
 /**
  * How the death benefit is taxed, which is a story about dates rather than
