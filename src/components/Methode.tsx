@@ -85,11 +85,13 @@ export function Methode() {
                 Un taux unique est reconduit sur tout l’horizon. Aucun fonds en euros n’a servi le
                 même taux deux ans de suite.
               </Limite>
-              <Limite titre="Traduire les résultats en pouvoir d’achat.">
-                Tous les montants sont en <strong className="font-medium">euros courants</strong> :
-                l’inflation n’est pas modélisée. Un capital affiché à vingt ans vaut nettement moins
-                que le même nombre aujourd’hui. Cela ne change aucun classement — l’inflation frappe
-                tous ces contrats à l’identique — mais cela change ce que le chiffre veut dire.
+              <Limite titre="Projeter en pouvoir d’achat.">
+                Toute la projection est en{' '}
+                <strong className="font-medium">euros courants</strong>, et l’inflation n’y entre
+                jamais : elle sert seulement à retraduire le capital final en euros d’aujourd’hui,
+                sous le bandeau de résultat. Elle ne peut déplacer aucun classement, puisqu’elle
+                divise les contrats par le même nombre — mais sans elle, un montant à vingt ans se
+                lit pour bien plus qu’il ne vaut.
               </Limite>
             </ul>
           </div>

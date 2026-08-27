@@ -96,7 +96,20 @@ export type Hypotheses = {
   versementProgramme: number;
   periodicite: Periodicite;
   /** Yearly uprating of the instalments, as a fraction. */
+  /**
+   * Yearly uprating of the instalments, as a fraction. Nominal, and chosen by
+   * the user: it tracks inflation only if they set it to.
+   */
   revalorisationVersements: number;
+  /**
+   * i — expected inflation, used to restate the final capital in today's euros.
+   *
+   * **It drives nothing.** The whole projection is nominal, and this only ever
+   * divides the answer at the very end. That is not a shortcut: inflation hits
+   * all six contracts identically, so it can move no ranking — it changes what
+   * the figure *means*, never which contract wins. A test pins that.
+   */
+  inflation: number;
   /** N — horizon, in years. */
   horizon: number;
   /** Target share of unit-linked funds, as a fraction of the policy. */
@@ -124,6 +137,9 @@ export const BORNES = {
   versementInitial: { min: 0, max: 5_000_000 },
   versementProgramme: { min: 0, max: 100_000 },
   revalorisationVersements: { min: 0, max: 0.1 },
+  // Deflation is allowed, barely: it has happened, and refusing to represent it
+  // would be an opinion rather than a bound.
+  inflation: { min: -0.02, max: 0.1 },
   // One year is allowed, and on purpose: the degenerate case has to be
   // representable rather than silently rounded up to something comfortable.
   horizon: { min: 1, max: 40 },
@@ -139,6 +155,9 @@ export const DEFAUTS: Hypotheses = {
   versementProgramme: 200,
   periodicite: 'mensuelle',
   revalorisationVersements: 0,
+  // The ECB's stated objective, which is the only defensible default here: any
+  // other figure would be this simulator forecasting, which it does not do.
+  inflation: 0.02,
   // Twenty years, because half a point of fees needs time to become visible and
   // making it visible is the whole exercise. The eight-year mark, where the tax
   // regime turns, is one click away.
@@ -199,6 +218,7 @@ export function borner(hypotheses: Hypotheses): Hypotheses {
       hypotheses.revalorisationVersements,
       BORNES.revalorisationVersements,
     ),
+    inflation: borne(hypotheses.inflation, BORNES.inflation),
     horizon: Math.round(borne(hypotheses.horizon, BORNES.horizon)),
     partUC: borne(hypotheses.partUC, BORNES.partUC),
     classeUC: estClasseActif(hypotheses.classeUC) ? hypotheses.classeUC : 'actions-monde',
@@ -469,6 +489,18 @@ export function sommeTaux(t: TauxAnnuel): number {
  */
 export const ECHELLE_FRAIS_ANNUELS = 0.02;
 
+/**
+ * The same sum, restated in today's euros.
+ *
+ * A lens on the answer and never an input to it: the projection is nominal from
+ * end to end, and this divides once, at the very end. Which is why it is a free
+ * function taking a number rather than something threaded through the
+ * capitalisation — there is nothing for it to do in there.
+ */
+export function enEurosConstants(valeur: number, inflation: number, annees: number): number {
+  return valeur / (1 + inflation) ** annees;
+}
+
 function total(couts: CoutsPreleves, natures: NaturePoste[]): number {
   return postes().reduce((s, p) => s + (natures.includes(POSTES[p].nature) ? couts[p] : 0), 0);
 }
@@ -522,6 +554,13 @@ export type ResultatAccessible = {
   imposition: Imposition;
   psPayes: number;
   capitalNet: number;
+  /**
+   * `capitalNet` restated in today's euros, under the inflation the user
+   * assumed. Purely a lens: every ratio between contracts is unchanged, which
+   * is exactly why it belongs beside the headline figure and nowhere in the
+   * comparison table.
+   */
+  capitalNetReel: number;
   /**
    * Total yearly charge borne on the UC pocket: the contract's plus the fund's.
    * Derived from `tauxAnnuelUC` and never added up a second time.
@@ -943,6 +982,7 @@ export function projeterContrat(
     imposition,
     psPayes,
     capitalNet,
+    capitalNetReel: enEurosConstants(capitalNet, h.inflation, h.horizon),
     fraisAnnuelsUC: sommeTaux(tauxAnnuelUC),
     tauxAnnuelUC,
     tauxAnnuelEuros,

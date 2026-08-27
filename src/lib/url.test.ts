@@ -17,6 +17,11 @@ describe('what the address carries', () => {
   it('writes rates as percentage points, because a link is read by people too', () => {
     expect(encoderEtat(etat({ partUC: 0.35 }))).toContain('uc=35');
     expect(encoderEtat(etat({ rendementUC: 0.055 }))).toContain('rendement=5.5');
+    expect(encoderEtat(etat({ inflation: 0.035 }))).toContain('inflation=3.5');
+  });
+
+  it('carries a deflation, which has happened and should stay representable', () => {
+    expect(decoderEtat(encoderEtat(etat({ inflation: -0.01 }))).inflation).toBeCloseTo(-0.01, 9);
   });
 
   it('makes the round trip without loss', () => {
@@ -25,6 +30,7 @@ describe('what the address carries', () => {
       versementProgramme: 450,
       periodicite: 'trimestrielle',
       revalorisationVersements: 0.02,
+      inflation: 0.035,
       horizon: 27,
       partUC: 0.35,
       classeUC: 'obligations',

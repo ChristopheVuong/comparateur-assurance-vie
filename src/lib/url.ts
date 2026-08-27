@@ -31,6 +31,7 @@ const CLES = {
   programme: 'programme',
   periodicite: 'rythme',
   revalorisation: 'revalo',
+  inflation: 'inflation',
   horizon: 'duree',
   partUC: 'uc',
   classeUC: 'classe',
@@ -83,6 +84,11 @@ export function encoderEtat(
     arrondi(etat.revalorisationVersements * 100, DECIMALES_TAUX),
     arrondi(defauts.revalorisationVersements * 100, DECIMALES_TAUX),
   );
+  ajouter(
+    CLES.inflation,
+    arrondi(etat.inflation * 100, DECIMALES_TAUX),
+    arrondi(defauts.inflation * 100, DECIMALES_TAUX),
+  );
   ajouter(CLES.horizon, etat.horizon, defauts.horizon);
   ajouter(
     CLES.partUC,
@@ -123,6 +129,13 @@ export function decoderEtat(recherche: string, defauts: Hypotheses = DEFAUTS): H
         p.get(CLES.revalorisation),
         defauts.revalorisationVersements * 100,
         { min: BORNES.revalorisationVersements.min * 100, max: BORNES.revalorisationVersements.max * 100 },
+        DECIMALES_TAUX,
+      ) / 100,
+    inflation:
+      lireNombre(
+        p.get(CLES.inflation),
+        defauts.inflation * 100,
+        { min: BORNES.inflation.min * 100, max: BORNES.inflation.max * 100 },
         DECIMALES_TAUX,
       ) / 100,
     horizon: lireNombre(p.get(CLES.horizon), defauts.horizon, BORNES.horizon),

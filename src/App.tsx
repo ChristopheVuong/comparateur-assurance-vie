@@ -104,6 +104,16 @@ export default function App() {
                     <div className="tabular mt-1 text-4xl font-semibold sm:text-5xl">
                       {eur(tete.capitalNet)}
                     </div>
+                    {/* The one place inflation surfaces. It moves no ranking —
+                        every contract is divided by the same number — but it is
+                        what turns a figure two decades out into something a
+                        reader can weigh against prices they know. */}
+                    {h.inflation !== 0 && (
+                      <div className="tabular mt-1 text-sm text-brand-100">
+                        soit {eur(tete.capitalNetReel)} d’aujourd’hui, à {taux(h.inflation)}{' '}
+                        d’inflation
+                      </div>
+                    )}
                     <div className="mt-2 text-sm text-brand-100">
                       {contrat(tete.cle).libelle} — pour {eur(tete.primesVersees)} versés, et{' '}
                       {eur(tete.manqueAGagner)} laissés en frais malgré tout.

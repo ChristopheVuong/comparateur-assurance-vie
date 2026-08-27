@@ -12,7 +12,7 @@ import {
 import { CONTRATS } from '../lib/contrats';
 import { LIBELLES_FOYER, type Foyer } from '../lib/fiscalite';
 import { CLASSES, LIBELLES_CLASSES, RENDEMENT_BRUT, type ClasseActif } from '../lib/supports';
-import { annees, eur, taux } from '../lib/format';
+import { annees, eur, points, taux } from '../lib/format';
 import { Curseur, CurseurLog, Montant, Segments } from './Champs';
 
 /**
@@ -188,6 +188,23 @@ export function Saisie({
               hint="Un taux unique reconduit sur tout l’horizon, dans les deux cas. Aucun fonds en euros ne sert le même taux deux ans de suite."
             />
 
+            <Curseur
+              label="Inflation attendue"
+              valeur={Math.round(h.inflation * 1000) / 10}
+              min={BORNES.inflation.min * 100}
+              max={BORNES.inflation.max * 100}
+              pas={0.1}
+              onChange={(v) => onChange('inflation', v / 100)}
+              rendu={(v) => `${v} %`}
+              saisie={{ suffixe: '%', decimales: 1 }}
+              reperes={[
+                { valeur: 0, label: '0' },
+                { valeur: 2, label: '2 % — cible BCE' },
+                { valeur: 5, label: '5' },
+              ]}
+              hint="Ne change aucun calcul ni aucun classement : la projection est en euros courants d’un bout à l’autre, et l’inflation frappe tous les contrats à l’identique. Elle sert uniquement à traduire le capital final en euros d’aujourd’hui."
+            />
+
             <Segments<Foyer>
               label="Foyer fiscal"
               valeur={h.foyer}
@@ -209,9 +226,11 @@ export function Saisie({
               rendu={(v) => `${v} %`}
               saisie={{ suffixe: '%', decimales: 1 }}
               hint={
-                h.revalorisationVersements === 0
-                  ? 'Vos versements restent constants en euros, et perdent donc du pouvoir d’achat chaque année. Pour qu’ils suivent l’inflation, portez ce taux à celle que vous anticipez : le simulateur ne la connaît pas et ne la devinera pas.'
-                  : `Vos versements augmentent de ${taux(h.revalorisationVersements)} par an, en euros courants. C’est à vous de décider si ce taux suit l’inflation — le simulateur ne la modélise pas.`
+                Math.abs(h.revalorisationVersements - h.inflation) < 1e-9
+                  ? `Vos versements suivent exactement l’inflation que vous avez retenue : leur poids reste le même d’une année sur l’autre.`
+                  : h.revalorisationVersements < h.inflation
+                    ? `Vos versements augmentent moins vite que l’inflation (${taux(h.inflation)}) : ils perdent ${points(h.inflation - h.revalorisationVersements)} de pouvoir d’achat par an.`
+                    : `Vos versements augmentent plus vite que l’inflation (${taux(h.inflation)}) : votre effort d’épargne grandit d’année en année.`
               }
             />
           </div>

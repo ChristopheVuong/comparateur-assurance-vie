@@ -194,6 +194,35 @@ describe('what fees cost', () => {
     }
   });
 
+  it('lets inflation change what a figure means, and nothing else', () => {
+    // The property that keeps inflation a lens rather than a parameter. It
+    // divides the answer once, at the end, so it can move no nominal figure and
+    // no ranking — and if that ever stops being true, this simulator has
+    // started forecasting instead of comparing.
+    const sans = comparer(sur({ inflation: 0 }));
+    for (const taux of [0.02, 0.05, -0.01]) {
+      const avec = comparer(sur({ inflation: taux }));
+      expect(avec.map((r) => r.cle)).toEqual(sans.map((r) => r.cle));
+      avec.forEach((r, i) => {
+        const reference = sans[i];
+        expect(r.accessible).toBe(reference.accessible);
+        if (!r.accessible || !reference.accessible) return;
+        expect(r.capitalNet).toBeCloseTo(reference.capitalNet, 9);
+        expect(r.valeurBrute).toBeCloseTo(reference.valeurBrute, 9);
+        expect(r.manqueAGagner).toBeCloseTo(reference.manqueAGagner, 9);
+      });
+    }
+  });
+
+  it('restates the final capital in today’s euros, and only that', () => {
+    for (const { h, r } of TOUTES) {
+      expect(r.capitalNetReel * (1 + h.inflation) ** h.horizon).toBeCloseTo(r.capitalNet, 6);
+      // Ratios between contracts survive the division untouched — which is why
+      // this figure belongs beside the headline and nowhere in the table.
+      if (h.inflation > 0) expect(r.capitalNetReel).toBeLessThan(r.capitalNet);
+    }
+  });
+
   it('never charges the euro pocket for a unit it does not hold', () => {
     // The euro fund has no support whose ongoing charge could apply, so that
     // term is structurally zero — not merely small.
