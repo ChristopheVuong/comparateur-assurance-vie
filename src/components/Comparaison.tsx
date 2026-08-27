@@ -60,7 +60,7 @@ export function Comparaison({
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[46rem] text-sm">
+        <table className="w-full min-w-[42rem] text-sm">
           <caption className="sr-only">
             Capital net rendu par chaque contrat, à versements et allocation identiques, avec le
             détail de leurs frais annuels
@@ -73,7 +73,7 @@ export function Comparaison({
               <th scope="col" className="whitespace-nowrap px-5 py-3 text-right font-medium">
                 Frais annuels des UC
               </th>
-              <th scope="col" className="px-5 py-3 text-right font-medium">
+              <th scope="col" className="whitespace-nowrap px-5 py-3 text-right font-medium">
                 Capital net
               </th>
               <th scope="col" className="px-5 py-3 text-right font-medium">

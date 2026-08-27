@@ -88,13 +88,21 @@ export default function App() {
 
         <section className="mx-auto max-w-6xl px-5 py-10 sm:py-14">
           <div className="grid gap-6 lg:grid-cols-12">
-            <div className="lg:col-span-5 xl:col-span-4">
+            {/* `min-w-0` on both columns, and it is load-bearing rather than
+                defensive: a grid item defaults to `min-width: auto`, so it
+                refuses to shrink below its widest child. The results table
+                carries `min-w-[46rem]`, which therefore pushed the whole grid
+                to 736px — and with it the header, the hero and the input
+                panel. The page scrolled sideways on any narrow window while
+                the table's own `overflow-x-auto` sat there with nothing to
+                scroll. */}
+            <div className="min-w-0 lg:col-span-5 xl:col-span-4">
               <div className="lg:sticky lg:top-20">
                 <Saisie h={h} onChange={maj} />
               </div>
             </div>
 
-            <div className="space-y-6 lg:col-span-7 xl:col-span-8">
+            <div className="min-w-0 space-y-6 lg:col-span-7 xl:col-span-8">
               {tete ? (
                 <div className="card overflow-hidden">
                   <div className="bg-brand-700 px-6 py-6 text-white sm:px-8">
