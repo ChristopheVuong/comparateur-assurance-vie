@@ -74,9 +74,32 @@ export type Bareme = {
    * paragraph.
    */
   nature: 'structurel' | 'promotionnel';
+  /**
+   * ISO date after which the campaign no longer accepts new payments; null on
+   * a structural scale, and mandatory on a promotional one (there is a test).
+   *
+   * Without it the catalogue can describe an offer but never know it has
+   * lapsed, so a page would go on advertising a campaign nobody can subscribe
+   * to and quoting what it "would be worth". An offer with no end date is not
+   * an offer, it is a tariff.
+   */
+  dateFin: string | null;
   /** Payments eligible for the uplift, in euros; null when uncapped. */
   plafondVersements: number | null;
 };
+
+/**
+ * Has the campaign closed by the given date?
+ *
+ * The date is an argument rather than a call to the clock, so that the engine
+ * stays pure and a shared link keeps projecting the same figures tomorrow as
+ * today. The wall clock enters at the edge of the application, like formatting
+ * does — never in `lib/`.
+ */
+export function promotionExpiree(bareme: Bareme | null, aLaDate: string): boolean {
+  if (!bareme || bareme.nature !== 'promotionnel' || bareme.dateFin === null) return false;
+  return aLaDate > bareme.dateFin;
+}
 
 /**
  * A euro fund whose interest is locked away until a term, and topped up if you
@@ -219,6 +242,7 @@ const MACIF_EURO: FondsEuros = {
       { partUCMinimale: 0.2, taux: 0.029 },
     ],
     nature: 'structurel',
+    dateFin: null,
     plafondVersements: null,
   },
   partUCMinimale: null,
@@ -275,6 +299,7 @@ const SURAVENIR_OPPORTUNITES_2: FondsEuros = {
       { partUCMinimale: 0.7, taux: 0.045 },
     ],
     nature: 'structurel',
+    dateFin: null,
     plafondVersements: null,
   },
   partUCMinimale: null,
@@ -301,6 +326,8 @@ const EURO_EXCLUSIF: FondsEuros = {
       { partUCMinimale: 0.3, taux: 0.045 },
     ],
     nature: 'promotionnel',
+    // L'offre porte sur les versements effectués pendant l'année civile 2026.
+    dateFin: '2026-12-31',
     plafondVersements: 500_000,
   },
   partUCMinimale: null,

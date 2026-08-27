@@ -28,7 +28,12 @@ export default function App() {
   const maj = <K extends keyof Hypotheses>(cle: K, valeur: Hypotheses[K]) =>
     setH((e) => ({ ...e, [cle]: valeur }))
 
-  const resultats = useMemo(() => comparer(h), [h])
+  // The one place the wall clock enters, and it enters as an argument: the
+  // engine stays pure, and only the question "has this campaign closed?"
+  // depends on what day it is.
+  const aujourdhui = useMemo(() => new Date().toISOString().slice(0, 10), [])
+
+  const resultats = useMemo(() => comparer(h, aujourdhui), [h, aujourdhui])
   const classes = useMemo(
     () =>
       resultats

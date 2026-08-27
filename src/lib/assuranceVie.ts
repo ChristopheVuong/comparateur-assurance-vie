@@ -46,9 +46,11 @@ import {
 import {
   ANNEE_REFERENCE,
   CONTRATS,
+  DATE_RELEVE,
   TICKET_MAXIMAL,
   avecPromotion,
   contrat as contratDe,
+  promotionExpiree,
   sansFrais,
   tauxDeBase,
   type Bareme,
@@ -475,6 +477,18 @@ type Options = {
    * hide the very cost this simulator exists to expose.
    */
   terNul?: boolean;
+  /**
+   * The day the plan is being read, ISO, used only to decide whether a
+   * promotional campaign has closed.
+   *
+   * An argument and not a call to the clock: `lib/` has to stay pure, a shared
+   * link has to project the same figures tomorrow as today, and a test has to
+   * be able to stand on either side of an expiry date. It defaults to the day
+   * the catalogue was surveyed, which is the honest fallback — a caller who
+   * does not say what day it is gets the answer as of the last time anybody
+   * checked the data.
+   */
+  aLaDate?: string;
 };
 
 /**
@@ -739,9 +753,15 @@ export function projeterContrat(
   const avantImpot = valeurBrute + psPayes;
   const avantImpotSansFrais = etalon.accessible ? etalon.valeurBrute + etalon.psPayes : avantImpot;
 
-  const promo = c.fondsEuros.some((f) => f.bareme?.nature === 'promotionnel')
-    ? projeterContrat(h, avecPromotion(c), { variantes: false })
-    : null;
+  // A campaign that has closed is worth nothing to ask about: quoting what it
+  // "would be worth" for an offer nobody can subscribe to any more would be
+  // advertising a dead product.
+  const aLaDate = options.aLaDate ?? DATE_RELEVE;
+  const expiree = promotionExpiree(fonds.bareme, aLaDate);
+  const promo =
+    !expiree && c.fondsEuros.some((f) => f.bareme?.nature === 'promotionnel')
+      ? projeterContrat(h, avecPromotion(c), { variantes: false })
+      : null;
   const gainPromotionnel =
     promo && promo.accessible ? Math.max(0, promo.capitalNet - capitalNet) : 0;
 
@@ -751,7 +771,7 @@ export function projeterContrat(
     manqueAGagner: capitalNetSansFrais - capitalNet,
     coutFraisAvantImpot: avantImpotSansFrais - avantImpot,
     gainPromotionnel,
-    alertes: alerter(h, c, { fonds, support, gainPromotionnel, primes }),
+    alertes: alerter(h, c, { fonds, support, gainPromotionnel, primes, expiree }),
   };
 }
 
@@ -765,10 +785,16 @@ export function projeterContrat(
 function alerter(
   h: Hypotheses,
   c: Contrat,
-  ctx: { fonds: FondsEuros; support: Support; gainPromotionnel: number; primes: number },
+  ctx: {
+    fonds: FondsEuros;
+    support: Support;
+    gainPromotionnel: number;
+    primes: number;
+    expiree: boolean;
+  },
 ): Alerte[] {
   const alertes: Alerte[] = [];
-  const { fonds, support, gainPromotionnel, primes } = ctx;
+  const { fonds, support, gainPromotionnel, primes, expiree } = ctx;
 
   const provisionDe = fonds.provisionFidelite;
   if (provisionDe && h.horizon < provisionDe.termeAnnees) {
@@ -810,7 +836,15 @@ function alerter(
     });
   }
 
-  if (gainPromotionnel > 0) {
+  if (expiree) {
+    alertes.push({
+      genre: 'promotion',
+      texte:
+        `L’offre promotionnelle de ce contrat s’est achevée le ` +
+        `${(fonds.bareme?.dateFin ?? '').split('-').reverse().join('/')}. Le taux bonifié qui figure ` +
+        'peut-être encore dans sa communication n’est plus souscriptible ; seul le taux de base s’applique.',
+    });
+  } else if (gainPromotionnel > 0) {
     alertes.push({
       genre: 'promotion',
       texte:
@@ -874,13 +908,13 @@ function alerter(
   return alertes;
 }
 
-export function projeter(h: Hypotheses, cle: CleContrat): Resultat {
-  return projeterContrat(h, contratDe(cle));
+export function projeter(h: Hypotheses, cle: CleContrat, aLaDate?: string): Resultat {
+  return projeterContrat(h, contratDe(cle), { aLaDate });
 }
 
 /** Every contract in catalogue order — including the ones that drop out. */
-export function comparer(h: Hypotheses): Resultat[] {
-  return CONTRATS.map((c) => projeterContrat(h, c));
+export function comparer(h: Hypotheses, aLaDate?: string): Resultat[] {
+  return CONTRATS.map((c) => projeterContrat(h, c, { aLaDate }));
 }
 
 /** The accessible ones, best first. */

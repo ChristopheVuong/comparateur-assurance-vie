@@ -55,7 +55,7 @@ de **Fortuneo**, dont le fonds *Suravenir Rendement 2* exige 30 % d'UC à chaque
 ```bash
 npm install
 npm run dev      # serveur de développement
-npm test         # 115 tests sur le moteur, les catalogues, la fiscalité et l'adresse
+npm test         # 123 tests : moteur, catalogues, fiscalité, adresse, et le caractère statique
 npm run build
 npm run lint
 ```
@@ -98,7 +98,8 @@ parce que c'est celui qu'il perd.
 
 - **Projeter un taux promotionnel.** Les 4,50 % de vitrine supposent une part d'UC, un
   versement neuf et deux millésimes. Le calcul retient le taux structurel, et chiffre à
-  part ce que la promotion vaudrait si elle durait.
+  part ce que la promotion vaudrait si elle durait — puis cesse de le chiffrer une fois
+  l'offre close.
 - **Faire varier le rendement selon le contrat.** Un ETF et un fonds géré activement
   partent du même rendement brut, qui n'est pas un champ du support mais de la classe
   d'actifs — le type l'interdit. Leur donner des espérances différentes trancherait le
@@ -118,11 +119,45 @@ hypothèse**, pas une donnée. Il suppose un rachat total au terme, alors qu'ét
 permet de reprendre l'abattement chaque année. Et il prête l'abattement de 4 600 € à chaque
 contrat, alors qu'il est commun à tous ceux d'un même foyer.
 
-## Architecture
+## Une page statique, et un test qui l'exige
 
 Aucune dépendance d'exécution en dehors de React. Pas de routeur, pas de gestionnaire
-d'état, pas de bibliothèque de graphiques — le SVG est écrit à la main. Aucune donnée ne
-quitte le navigateur : l'adresse est le seul endroit où votre plan est écrit.
+d'état, pas de bibliothèque de graphiques — le SVG est écrit à la main. **La page ne
+récupère rien, ne stocke rien, et ne sait pas quel jour on est** sauf là où on le lui
+donne : l'adresse est le seul endroit où votre plan est écrit.
+
+Ce n'est pas un choix de performance. C'est ce qui fait que l'outil marche hors ligne, ne
+trace personne, et répond la même chose à un lien partagé un an plus tard.
+
+C'est aussi exactement le genre de propriété qui s'érode un commit raisonnable à la fois.
+« Ce serait mieux de rafraîchir le taux au chargement » est la façon dont une page statique
+se met à dépendre d'un tiers qui répond 403, et dont une comparaison reproductible se met à
+dériver. La règle n'est donc pas une phrase dans ce README : elle est dans
+`src/lib/statique.test.ts`, et elle fait échouer le build.
+
+| Ce qui est interdit dans `src/` | Pourquoi |
+| --- | --- |
+| `fetch`, `XMLHttpRequest`, WebSocket, `sendBeacon` | La page ne dépend d'aucun tiers au chargement |
+| `localStorage`, `sessionStorage`, `indexedDB`, cookies | Rien à mémoriser, donc rien à transmettre |
+| Lire l'horloge ailleurs que dans `App.tsx` | `lib/` doit rester pur : deux exécutions du même plan doivent s'accorder |
+
+**Si la veille sur les sources est un jour automatisée, elle vit dans GitHub Actions** —
+scraping, comparaison, PR à valider par un humain, rebuild sur merge. Jamais dans la page.
+C'est le même patron que le pré-rendu des formules dans le dépôt jumeau : l'outil travaille
+au moment de l'écriture, seul le résultat voyage.
+
+### Là où le calendrier entre quand même
+
+Une offre promotionnelle a une date de fin (`Bareme.dateFin`). Sans elle, le catalogue peut
+décrire une campagne mais jamais savoir qu'elle est close — la page continuerait de vanter
+un bonus que plus personne ne peut souscrire. **Une offre sans date de fin n'est pas une
+offre, c'est un tarif**, et un test le vérifie sur chaque barème.
+
+La date arrive donc en argument (`comparer(h, aLaDate)`), jamais par un appel à l'horloge
+depuis le moteur. `App.tsx` passe le jour réel ; les tests passent une date fixe et peuvent
+se placer de part et d'autre d'une échéance ; et sans argument, le moteur répond **à la date
+du dernier relevé du catalogue** — le repli honnête, puisque personne n'a vérifié la donnée
+depuis.
 
 ```
 src/lib/

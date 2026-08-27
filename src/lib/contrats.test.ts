@@ -10,6 +10,7 @@ import {
   contrat,
   estCleContrat,
   fondsEuros,
+  promotionExpiree,
   sansFrais,
   sansPromotion,
   tauxDeBase,
@@ -168,6 +169,34 @@ describe('the euro funds', () => {
         if (i > 0) expect(h.annee).toBe(f.historique[i - 1].annee + 1);
       });
     }
+  });
+
+  it('dates the end of every campaign, and never dates a tariff', () => {
+    // An offer with no end date is not an offer, it is a tariff — and a
+    // catalogue that cannot tell the two apart goes on advertising a campaign
+    // nobody can subscribe to.
+    for (const f of TOUS_FONDS) {
+      if (!f.bareme) continue;
+      if (f.bareme.nature === 'promotionnel') {
+        expect(f.bareme.dateFin, `${f.cle} : promotion sans date de fin`).toMatch(
+          /^\d{4}-\d{2}-\d{2}$/,
+        );
+      } else {
+        expect(f.bareme.dateFin, `${f.cle} : un barème structurel ne finit pas`).toBeNull();
+      }
+    }
+  });
+
+  it('knows when a campaign has closed, and never says so of a tariff', () => {
+    const promo = TOUS_FONDS.find((f) => f.bareme?.nature === 'promotionnel')!;
+    const fin = promo.bareme!.dateFin!;
+    expect(promotionExpiree(promo.bareme, fin)).toBe(false);
+    expect(promotionExpiree(promo.bareme, '2099-01-01')).toBe(true);
+    expect(promotionExpiree(promo.bareme, '2020-01-01')).toBe(false);
+
+    const structurel = TOUS_FONDS.find((f) => f.bareme?.nature === 'structurel')!;
+    expect(promotionExpiree(structurel.bareme, '2099-01-01')).toBe(false);
+    expect(promotionExpiree(null, '2099-01-01')).toBe(false);
   });
 
   it('names its rate convention explicitly, because guessing costs a third of a point', () => {

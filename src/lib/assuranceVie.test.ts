@@ -18,7 +18,7 @@ import {
   type Hypotheses,
   type ResultatAccessible,
 } from './assuranceVie';
-import { avecSupport, contrat } from './contrats';
+import { DATE_RELEVE, avecSupport, contrat } from './contrats';
 
 const sur = (modifications: Partial<Hypotheses> = {}): Hypotheses => ({
   ...DEFAUTS,
@@ -155,6 +155,29 @@ describe('the euro-fund scales', () => {
     if (!r.accessible) return;
     expect(r.gainPromotionnel).toBeGreaterThan(0);
     expect(r.alertes.some((a) => a.genre === 'promotion')).toBe(true);
+  });
+
+  it('stops quoting a campaign once it has closed', () => {
+    const h = sur({ partUC: 0.6, horizon: 20 });
+    const encoursCours = projeter(h, 'boursovie', '2026-08-27');
+    const apres = projeter(h, 'boursovie', '2027-01-01');
+    expect(encoursCours.accessible && apres.accessible).toBe(true);
+    if (!encoursCours.accessible || !apres.accessible) return;
+
+    expect(encoursCours.gainPromotionnel).toBeGreaterThan(0);
+    expect(apres.gainPromotionnel).toBe(0);
+
+    // The capital is untouched — the campaign was never projected in the first
+    // place. What changes is only what the page is willing to say about it.
+    expect(apres.capitalNet).toBeCloseTo(encoursCours.capitalNet, 6);
+    expect(apres.alertes.some((a) => a.texte.includes('s’est achevée'))).toBe(true);
+  });
+
+  it('reads the same tomorrow as today unless a date is given', () => {
+    // A shared link must not drift. Without an explicit date the engine answers
+    // as of the day the catalogue was surveyed, not as of the clock.
+    const h = sur({ partUC: 0.6 });
+    expect(projeter(h, 'boursovie')).toEqual(projeter(h, 'boursovie', DATE_RELEVE));
   });
 
   it('leaves a structural scale alone, and charges no phantom promotion for it', () => {

@@ -1,0 +1,90 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Checks also run on pull requests; only the deployment is reserved for
+  # the main branch.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Token required to deploy to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, without cancelling the one in flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # `--deny-warnings` is essential: without it oxlint reports warnings but
+      # exits with code 0, so this step could never fail.
+      - name: Lint
+        run: npm run lint
+
+      # The engine does not ship without its tests. Vitest exits non-zero both
+      # on a failing test and when it finds no test file at all, so the suite
+      # cannot silently disappear.
+      #
+      # Several of these tests are not about the code but about the catalogue:
+      # they fail if a rate leaves its plausible range, if a promotional scale
+      # ships without an end date, or if a source is dated in the future. A
+      # comparison of named commercial products is only worth what its data is
+      # worth, and this is where that gets enforced.
+      - name: Unit tests
+        run: npm test
+
+      # `npm run build` chains `tsc -b` then `vite build`, so type errors fail
+      # this step.
+      #
+      # A project site lives under /<repo>/ rather than at the root, so assets
+      # have to be prefixed. Drop BASE_PATH if a custom domain is ever attached
+      # (vite.config.ts then falls back to relative paths, which serve from the
+      # root just as well).
+      - name: Build
+        run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+
+      # `enablement: true` provisions GitHub Pages on the repository if it is
+      # not set up yet. Without it the step fails with "Get Pages site failed"
+      # until someone enables Pages by hand in the repository settings.
+      - uses: actions/configure-pages@v6
+        if: github.event_name != 'pull_request'
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    # A pull request does not deploy; it only runs the checks.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
