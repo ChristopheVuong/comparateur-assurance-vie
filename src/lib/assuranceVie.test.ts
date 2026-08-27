@@ -18,7 +18,7 @@ import {
   type Hypotheses,
   type ResultatAccessible,
 } from './assuranceVie';
-import { DATE_RELEVE, avecSupport, contrat } from './contrats';
+import { CONTRATS, DATE_RELEVE, avecSupport, contrat } from './contrats';
 
 const sur = (modifications: Partial<Hypotheses> = {}): Hypotheses => ({
   ...DEFAUTS,
@@ -42,7 +42,7 @@ describe('the plan the simulator opens on', () => {
 
   it('turns €50,000 plus €300 a month over twenty years into a real spread', () => {
     const rangs = classer(comparer(sur()));
-    expect(rangs.length).toBe(6);
+    expect(rangs.length).toBe(CONTRATS.length);
     const meilleur = rangs[0];
     const pire = rangs.at(-1)!;
     // The spread is the entire reason the page exists: if it were noise, there

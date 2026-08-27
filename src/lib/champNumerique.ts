@@ -26,33 +26,52 @@ export type OptionsSaisie = {
  * one and a numeric keypad often the other, and refusing either would be
  * pedantry aimed at the wrong person.
  */
+/**
+ * What a keystroke leaves in the field, and what number it means.
+ *
+ * Split out of the hook and exported so it can be tested without a DOM — which
+ * matters more than it looks. The naive version kept every digit and dot, so
+ * `1.2.3` reached `Number()` as `NaN`, `NaN` reached the React state, and
+ * `?rendement=NaN` reached the address bar. The engine survived it (every
+ * public function clamps on the way in) but the page did not: the sliders got
+ * `NaN` as a value and the shared link was broken. A second decimal mark is a
+ * typo, not an attack, and it must simply be ignored.
+ */
+export function analyser(saisie: string, decimales: number) {
+  if (decimales === 0) {
+    const chiffres = saisie.replace(/[^\d]/g, '');
+    return { chiffres, valeur: Number(chiffres || 0) };
+  }
+  const nettoye = saisie.replace(/,/g, '.').replace(/[^\d.]/g, '');
+  // Only the first decimal mark counts; the rest are dropped rather than
+  // poisoning the parse.
+  const [entier, ...reste] = nettoye.split('.');
+  const chiffres = reste.length === 0 ? entier : `${entier}.${reste.join('')}`;
+  const valeur = Number(chiffres || 0);
+  return { chiffres, valeur: Number.isFinite(valeur) ? valeur : 0 };
+}
+
+export function formater(valeur: number, decimales: number, videSiZero: boolean) {
+  if (videSiZero && valeur === 0) return '';
+  if (decimales === 0) return nombre(valeur);
+  return valeur.toLocaleString('fr-FR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimales,
+  });
+}
+
 export function useChampNumerique(
   valeur: number,
   { min, max, decimales = 0, videSiZero = false }: OptionsSaisie,
   onChange: (v: number) => void,
 ) {
-  const formater = (v: number) =>
-    videSiZero && v === 0
-      ? ''
-      : decimales === 0
-        ? nombre(v)
-        : v.toLocaleString('fr-FR', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: decimales,
-          });
+  const rendre = (v: number) => formater(v, decimales, videSiZero);
+  const lire = (saisie: string) => analyser(saisie, decimales);
 
-  const analyser = (saisie: string) => {
-    const chiffres =
-      decimales === 0
-        ? saisie.replace(/[^\d]/g, '')
-        : saisie.replace(/,/g, '.').replace(/[^\d.]/g, '');
-    return { chiffres, valeur: Number(chiffres || 0) };
-  };
-
-  const [brouillon, setBrouillon] = useState(() => formater(valeur));
+  const [brouillon, setBrouillon] = useState(() => rendre(valeur));
 
   useEffect(() => {
-    if (analyser(brouillon).valeur !== valeur) setBrouillon(formater(valeur));
+    if (lire(brouillon).valeur !== valeur) setBrouillon(rendre(valeur));
     // Only resynchronise when the upstream value changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valeur]);
@@ -60,18 +79,18 @@ export function useChampNumerique(
   return {
     brouillon,
     saisir: (saisie: string) => {
-      const { chiffres, valeur: v } = analyser(saisie);
+      const { chiffres, valeur: v } = lire(saisie);
       setBrouillon(
         decimales === 0
           ? // A euro amount reads better with its separators, including while
             // it is being typed.
             chiffres === ''
             ? ''
-            : formater(Number(chiffres))
+            : rendre(Number(chiffres))
           : chiffres.replace('.', ','),
       );
       onChange(Math.min(max, Math.max(min, v)));
     },
-    quitter: () => setBrouillon(formater(valeur)),
+    quitter: () => setBrouillon(rendre(valeur)),
   };
 }

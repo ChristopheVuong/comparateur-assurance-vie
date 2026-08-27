@@ -73,9 +73,10 @@ export default function App() {
             </h1>
             <p className="mt-5 max-w-2xl leading-relaxed text-ink-500">
               La fiscalité de l’assurance-vie est la même partout. Ce qui change d’un contrat à
-              l’autre, ce sont les frais — et pas ceux qu’on met en avant. Un tiers de l’écart
-              vient du tarif de l’enveloppe ; les deux autres tiers viennent de ce qu’on vous
-              laisse acheter avec.
+              l’autre, ce sont les frais — et pas ceux qu’on met en avant. L’essentiel de l’écart
+              ne vient pas du tarif de l’enveloppe, mais de ce qu’on vous laisse acheter avec :
+              certains contrats donnent accès aux ETF, d’autres vous laissent des fonds maison cinq
+              fois plus chers.
             </p>
             <div className="mt-6 max-w-3xl">
               <Avertissement />
@@ -104,7 +105,8 @@ export default function App() {
                     <div className="tabular mt-1 text-4xl font-semibold sm:text-5xl">
                       {eur(tete.capitalNet)}
                     </div>
-                    {/* The one place inflation surfaces. It moves no ranking —
+                    {/* The only place the *result* is restated in today's euros.
+                        Inflation moves no ranking —
                         every contract is divided by the same number — but it is
                         what turns a figure two decades out into something a
                         reader can weigh against prices they know. */}
@@ -116,7 +118,7 @@ export default function App() {
                     )}
                     <div className="mt-2 text-sm text-brand-100">
                       {contrat(tete.cle).libelle} — pour {eur(tete.primesVersees)} versés, et{' '}
-                      {eur(tete.manqueAGagner)} laissés en frais malgré tout.
+                      {eur(tete.manqueAGagner)} que les frais vous auront coûté malgré tout.
                     </div>
                   </div>
                   {queue && queue !== tete && (

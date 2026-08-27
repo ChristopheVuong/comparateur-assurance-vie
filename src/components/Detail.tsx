@@ -53,6 +53,7 @@ export function Detail({ r }: { r: ResultatAccessible }) {
   // the same contract forfeits this reserve too, so it is not part of what the
   // fees cost. Money lost all the same, hence its own line.
   const penalites = grouper(r.coutsPreleves, ['penalite']).filter(visible);
+  const impots = grouper(r.coutsPreleves, ['impot']).filter(visible);
 
   return (
     <div className="card p-6 sm:p-8">
@@ -107,6 +108,17 @@ export function Detail({ r }: { r: ResultatAccessible }) {
             {eur(-(r.coutFraisAvantImpot - r.manqueAGagner))}
           </dd>
         </div>
+        {/* The tax has a line of its own, outside the reconciliation above: it
+            is not what the contract costs, and it is the same for all of them —
+            but a breakdown of where the money went that never mentioned the
+            state would be a strange thing to publish. */}
+        {impots.map((l) => (
+          <div key={l.groupe} className="flex items-baseline gap-3 border-t border-ink-200 pt-2">
+            <dt className="shrink-0 text-ink-600">{LIBELLES_GROUPE[l.groupe]}</dt>
+            <span className="h-px min-w-4 flex-1 self-end border-b border-dotted border-ink-200" />
+            <dd className="tabular shrink-0 font-medium text-ink-900">{eur(l.montant)}</dd>
+          </div>
+        ))}
       </dl>
       <p className="field-hint mt-3">
         Un euro pris par l’assureur est un euro que le fisc ne taxe pas : une part de chaque frais

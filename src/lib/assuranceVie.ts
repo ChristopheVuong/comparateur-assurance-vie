@@ -30,9 +30,10 @@
  *
  * Promotional rates are **not projected**. A campaign covering two vintages,
  * carried out twenty years, is an error rather than an option, so the engine
- * always serves the base tier — and then runs the plan a second time with the
- * promotion honoured, so the caveat arrives as an amount of money instead of a
- * sentence.
+ * always serves the base tier. While such an offer is still open it runs the
+ * plan a second time with the promotion honoured, so the caveat arrives as an
+ * amount of money rather than a sentence; once the campaign has closed there is
+ * nothing left to quote and the caveat says so instead.
  */
 
 import {
@@ -95,7 +96,6 @@ export type Hypotheses = {
   /** Amount of one instalment, in euros. */
   versementProgramme: number;
   periodicite: Periodicite;
-  /** Yearly uprating of the instalments, as a fraction. */
   /**
    * Yearly uprating of the instalments, as a fraction. Nominal, and chosen by
    * the user: it tracks inflation only if they set it to.
@@ -736,7 +736,7 @@ type Options = {
 
 /**
  * Takes the contract record rather than its key, and that is not incidental:
- * it is what makes `sansFrais`, `avecPromotion` and `avecSupport` usable
+ * it is what makes `sansFrais`, `avecPromotion`, `sansPromotion` and `avecSupport` usable
  * without seeding the catalogue with phantom entries.
  */
 export function projeterContrat(
@@ -779,7 +779,6 @@ export function projeterContrat(
   let provision = 0;
   let psPayes = 0;
   let primes = 0;
-  let arbitragesFaits = 0;
 
   const couts: CoutsPreleves = {
     versement: 0,
@@ -884,8 +883,11 @@ export function projeterContrat(
       const cibleUC = h.partUC * total;
       const delta = cibleUC - pocheU;
       if (Math.abs(delta) > 1e-9 && total > 0) {
-        const gratuit = arbitragesFaits < c.arbitrage.gratuitsParAn;
-        arbitragesFaits += 1;
+        // One rebalancing a year, so the allowance resets with the year. A
+        // counter carried across the whole horizon would turn a contract's
+        // "one free arbitrage per year" into one free arbitrage ever, and
+        // charge Macif for nineteen operations it gives away.
+        const gratuit = c.arbitrage.gratuitsParAn >= 1;
         fraisArbitrage = gratuit ? 0 : Math.abs(delta) * c.arbitrage.taux;
         fraisArbitrage += Math.abs(delta) * fraisETF;
 

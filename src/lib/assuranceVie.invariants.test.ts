@@ -223,6 +223,24 @@ describe('what fees cost', () => {
     }
   });
 
+  it('renews the free arbitrage allowance every year, as the contract says', () => {
+    // The engine used to carry the counter across the whole horizon, so a
+    // contract offering one free arbitrage *per year* got exactly one, ever.
+    // Macif is the only contract in the catalogue that charges for arbitrage,
+    // which is why nothing noticed.
+    const macif = contrat('macif-epargne-vie');
+    expect(macif.arbitrage.gratuitsParAn).toBeGreaterThanOrEqual(1);
+    const r = projeterContrat(sur({ horizon: 20, partUC: 0.6, rebalancement: 'annuel' }), macif);
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    expect(r.coutsPreleves.arbitrage).toBe(0);
+
+    // And a contract with no free allowance is still charged.
+    const payant = { ...macif, arbitrage: { gratuitsParAn: 0, taux: 0.005 } };
+    const s = projeterContrat(sur({ horizon: 20, partUC: 0.6, rebalancement: 'annuel' }), payant);
+    expect(s.accessible && s.coutsPreleves.arbitrage).toBeGreaterThan(0);
+  });
+
   it('never charges the euro pocket for a unit it does not hold', () => {
     // The euro fund has no support whose ongoing charge could apply, so that
     // term is structurally zero — not merely small.

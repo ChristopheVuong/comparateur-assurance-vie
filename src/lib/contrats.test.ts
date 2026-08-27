@@ -66,8 +66,16 @@ describe('the catalogue of contracts', () => {
   it('gives every contract and every euro fund a key of its own', () => {
     const cles = CONTRATS.map((c) => c.cle);
     expect(new Set(cles).size).toBe(cles.length);
-    const fonds = TOUS_FONDS.map((f) => f.cle);
-    expect(new Set(fonds).size).toBeLessThanOrEqual(fonds.length);
+    // TOUS_FONDS is flattened across contracts, so a fund shared by two of them
+    // appears twice — legitimately. What must not happen is two *different*
+    // funds under one key: `fondsEuros(cle)` does a `.find()` and would hand
+    // back the wrong one, silently. So: same key implies same object.
+    const parCle = new Map<string, (typeof TOUS_FONDS)[number]>();
+    for (const f of TOUS_FONDS) {
+      const vu = parCle.get(f.cle);
+      if (vu) expect(f, `deux fonds différents sous la clé ${f.cle}`).toBe(vu);
+      else parCle.set(f.cle, f);
+    }
   });
 
   it('keeps every fee rate inside a plausible range', () => {
@@ -199,9 +207,14 @@ describe('the euro funds', () => {
     expect(promotionExpiree(null, '2099-01-01')).toBe(false);
   });
 
-  it('names its rate convention explicitly, because guessing costs a third of a point', () => {
+  it('publishes every rate net of management fees, as French practice has it', () => {
+    // Not a check on the union — the type already guarantees that, so asserting
+    // it proves nothing. What is worth pinning is the state of the data: all
+    // seven funds publish net, which is why the euro-pocket bar is empty and
+    // why the table says so. The day a fund publishes gross, this fails and the
+    // `'brut'` branch of the engine runs in production for the first time.
     for (const f of TOUS_FONDS) {
-      expect(['net-de-frais-de-gestion', 'brut']).toContain(f.conventionTaux);
+      expect(f.conventionTaux, `${f.cle}`).toBe('net-de-frais-de-gestion');
     }
   });
 });

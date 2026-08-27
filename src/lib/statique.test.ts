@@ -37,6 +37,38 @@ const SOURCES = Object.entries(
     contenu,
   }));
 
+/**
+ * The shell too, and not only the modules.
+ *
+ * `index.html` is the one file that can reach a third party without a single
+ * line of TypeScript, and it did: a Google Fonts stylesheet sent every
+ * visitor's address to Google before the first pixel, on a page whose footer
+ * promised that nothing left their browser. The guard scanned `src/` and
+ * declared victory.
+ */
+const PAGE: string = import.meta.glob('../../index.html', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})['../../index.html'] as string;
+
+describe('the shipped page reaches nobody', () => {
+  it('finds the page to check', () => {
+    expect(PAGE).toContain('<html');
+  });
+
+  it('names no host but its own', () => {
+    const externes = [...PAGE.matchAll(/(?:href|src)\s*=\s*"(https?:)?\/\/([^"/]+)/gi)].map(
+      (m) => m[2],
+    );
+    expect(externes, `index.html appelle ${externes.join(', ')}`).toEqual([]);
+  });
+
+  it('preconnects to nothing, which is the same promise stated earlier', () => {
+    expect(PAGE).not.toMatch(/rel\s*=\s*"(preconnect|dns-prefetch|preload)"/i);
+  });
+});
+
 describe('the page stays static', () => {
   it('has sources to check in the first place', () => {
     // Guards the guard: a path change that silently emptied this list would

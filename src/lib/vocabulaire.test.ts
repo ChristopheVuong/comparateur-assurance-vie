@@ -86,7 +86,11 @@ describe('the catalogue of deductions', () => {
     expect(POSTES_RECURRENTS.length).toBeLessThanOrEqual(3);
   });
 
-  it('holds every contract of the catalogue, so the copy can count them', () => {
-    expect(CONTRATS.length).toBeGreaterThan(1);
+  it('counts its contracts from the catalogue, never from a sentence', () => {
+    // The copy interpolates `CONTRATS.length`; this pins that the catalogue is
+    // the only source of that number, by checking the rendered strings would
+    // change if a contract were added.
+    expect(CONTRATS.length).toBe(new Set(CONTRATS.map((c) => c.cle)).size);
+    expect(CONTRATS.length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -19,13 +19,14 @@ import { Curseur, CurseurLog, Montant, Segments } from './Champs';
  * The plan, as the visitor describes it.
  *
  * Ordered the way somebody actually thinks about it — how much, for how long,
- * how exposed — with the two adjustments that reward a second look (the gross
- * return and the rebalancing rule) folded away at the bottom rather than
- * greeting anyone on arrival.
+ * how exposed — with the assumptions that reward a second look (the gross
+ * return, the rebalancing rule, the euro-rate source, inflation, the household
+ * and the uprating) folded away at the bottom rather than greeting anyone on
+ * arrival.
  *
  * One control here is not a preference but a claim about the world, and it is
- * flagged as such: the gross expected return applies identically to all six
- * contracts. Letting it vary per contract would smuggle the active-versus-index
+ * flagged as such: the gross expected return applies identically to every
+ * contract in the catalogue. Letting it vary per contract would smuggle the active-versus-index
  * argument into what is meant to be a comparison of fees.
  */
 export function Saisie({
@@ -174,7 +175,7 @@ export function Saisie({
                 valeur: r,
                 label: LIBELLES_REBALANCEMENT[r],
               }))}
-              hint="Sans rééquilibrage, une cible de 60 % dérive vers 78 % en vingt ans — ce qui avantagerait mécaniquement les contrats à barème."
+              hint="Sans rééquilibrage, les unités de compte prenant plus de valeur, la part réelle s’éloigne de votre cible au fil des ans — ce qui avantagerait mécaniquement les contrats à barème. Le détail d’un contrat donne la part atteinte à l’arrivée."
             />
 
             <Segments<SourceTaux>
@@ -185,7 +186,7 @@ export function Saisie({
                 valeur: s,
                 label: LIBELLES_SOURCE_TAUX[s].replace('Taux servi en ', ''),
               }))}
-              hint="Un taux unique reconduit sur tout l’horizon, dans les deux cas. Aucun fonds en euros ne sert le même taux deux ans de suite."
+              hint="Un taux unique reconduit sur tout l’horizon, dans les deux cas. Aucun assureur ne s’engage sur le taux de l’an prochain : c’est l’hypothèse la plus fragile du calcul."
             />
 
             <Curseur

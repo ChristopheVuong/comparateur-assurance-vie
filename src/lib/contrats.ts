@@ -474,7 +474,7 @@ export const CONTRATS: Contrat[] = [
       },
     ],
     note:
-      'La version clean share du contrat Afer, lancée en 2025. Frais de gestion trois fois plus élevés ' +
+      'La version clean share du contrat Afer, lancée en 2025. Frais de gestion deux fois et demie plus élevés ' +
       'sur les unités de compte, mais des supports deux fois moins chers : le total se compense presque ' +
       'exactement. Sa vraie particularité est ailleurs — un fonds en euros qui paie mieux, à condition ' +
       'de ne pas y toucher pendant huit ans.',
@@ -651,7 +651,7 @@ export const CONTRATS: Contrat[] = [
     ],
     note:
       'Deux fonds en euros aux logiques opposées, et c’est le seul contrat du panel où le choix du fonds ' +
-      'dépend de votre allocation. Frais de gestion à 0,75 %, soit une moitié de point de plus que Linxea ' +
+      'dépend de votre allocation. Frais de gestion à 0,75 %, soit un quart de point de plus que Linxea ' +
       'sur vingt ans — ce qui se voit.',
   },
 
@@ -710,8 +710,9 @@ export const CONTRATS: Contrat[] = [
       },
     ],
     note:
-      'Zéro frais d’entrée mais 0,75 % de frais de gestion appliqués aux deux poches, fonds en euros ' +
-      'compris. Le taux vitrine de 4,50 % suppose une promotion qui ne dure pas ; le taux durable est 3 %.',
+      'Zéro frais d’entrée, mais 0,75 % de frais de gestion sur les unités de compte — le tarif le plus ' +
+      'élevé du panel avec Fortuneo. Sur le fonds en euros, ces frais sont déjà déduits du taux publié. ' +
+      'Le taux vitrine de 4,50 % suppose une promotion qui ne dure pas ; le taux durable est 3 %.',
   },
 ];
 
@@ -752,7 +753,7 @@ export function tauxDeBase(f: FondsEuros): number {
 // ---------------------------------------------------------------------------
 
 /*
- * Three pure transformations, ten lines each, and they are the reason
+ * Four pure transformations, ten lines each, and they are the reason
  * `projeterContrat` takes a `Contrat` rather than a key: they turn the claim
  * this project rests on into something a test can execute, without polluting
  * the catalogue with phantom entries.

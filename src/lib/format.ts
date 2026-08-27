@@ -24,13 +24,6 @@ const euros = new Intl.NumberFormat('fr-FR', {
   maximumFractionDigits: 0,
 });
 
-const eurosPrecis = new Intl.NumberFormat('fr-FR', {
-  style: 'currency',
-  currency: 'EUR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 const entiers = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 
 /**
@@ -57,11 +50,6 @@ function fini(valeur: number): number {
  */
 export function eur(valeur: number): string {
   return euros.format(Math.round(fini(valeur)) || 0).replace(/-/g, MOINS);
-}
-
-/** An amount with its cents, for the few places where they carry meaning. */
-export function eurPrecis(valeur: number): string {
-  return eurosPrecis.format(fini(valeur)).replace(/-/g, MOINS);
 }
 
 /** A difference, always signed, so a gain and a loss cannot be misread. */

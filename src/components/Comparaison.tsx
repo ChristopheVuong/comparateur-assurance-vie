@@ -22,8 +22,8 @@ import { BarreFrais, COULEURS_POSTES } from './BarreFrais';
  * instead — not a dash, because `fraisSurEncours` is genuinely levied there and
  * "small, so we hid it" is the move this whole tool exists to contradict.
  *
- * Deliberately not a blended rate. Almost every contract publishes its euro
- * rate net of management fees, so the euro leg's zero is a fact about paperwork
+ * Deliberately not a blended rate. Every contract in the catalogue publishes
+ * its euro rate net of management fees, so the euro leg's zero is a fact about paperwork
  * rather than about price: blending would print 0,00 % for a euro-only plan on
  * a contract that does charge, and would make the column a property of the plan
  * instead of a property of the contract.
@@ -116,6 +116,15 @@ export function Comparaison({
                           en tête
                         </span>
                       )}
+                      {/* Material even when it does not move a figure: a
+                          contract you cannot subscribe to is still worth
+                          comparing if you already hold it, and worth marking
+                          if you do not. */}
+                      {!c.ouvertALaSouscription && (
+                        <span className="ml-2 rounded-full bg-ink-100 px-2 py-0.5 text-[11px] font-medium text-ink-600">
+                          fermé
+                        </span>
+                      )}
                       <span className="mt-0.5 block max-w-sm text-xs leading-relaxed text-ink-500">
                         {c.assureur} · {s.libelle}
                       </span>
@@ -187,9 +196,9 @@ export function Comparaison({
         <p className="mt-2.5 text-xs leading-relaxed text-ink-500">
           Les barres partagent une même échelle : plus elle est longue, plus le contrat coûte cher à
           détenir. Ce sont les frais des supports qui font l’essentiel de l’écart — la ligne que les
-          brochures ne mettent jamais en avant. Sur le fonds en euros, presque tous ces contrats
-          déduisent déjà leurs frais du taux qu’ils publient : un taux proche de zéro n’y est donc
-          pas une bonne nouvelle. Cliquez une ligne pour voir où part l’argent.
+          brochures ne mettent jamais en avant. Sur le fonds en euros, tous ces contrats déduisent
+          déjà leurs frais du taux qu’ils publient : un taux proche de zéro n’y est donc pas une
+          bonne nouvelle. Cliquez une ligne pour voir où part l’argent.
         </p>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { contrat } from '../lib/contrats';
 import { eur } from '../lib/format';
 
 /**
- * The six curves, drawn by hand.
+ * One curve per contract, drawn by hand.
  *
  * No chart library, for the same reason the rest of the project has no
  * dependencies: six polylines and an axis are a hundred lines of SVG, against a
@@ -173,8 +173,9 @@ export function Graphique({
       </ul>
 
       <p className="field-hint mt-3">
-        Les valeurs tracées sont brutes d’impôt : la fiscalité ne se paie qu’à la sortie et
-        s’applique de la même façon à tous. Le tableau, lui, donne bien le capital net.
+        Les valeurs tracées sont nettes des prélèvements sociaux du fonds en euros, retenus chaque
+        année, mais brutes de l’impôt de sortie, qui ne se paie qu’au rachat. Le tableau, lui, donne
+        bien le capital net.
       </p>
     </div>
   );

@@ -63,7 +63,7 @@ export function Methode() {
             </h3>
             <ul className="mt-4 space-y-3 text-sm leading-relaxed text-ink-500">
               <Limite titre="Projeter un taux promotionnel.">
-                Les 4,50 % ou 5 % affichés en vitrine supposent une part d’unités de compte, un
+                Le 4,50 % affiché en vitrine suppose une part d’unités de compte, un
                 versement neuf et une fenêtre de deux millésimes. Le calcul retient le taux
                 structurel, et chiffre à part ce que la promotion vaudrait si elle durait.
               </Limite>
@@ -78,12 +78,13 @@ export function Methode() {
                 chez lui.
               </Limite>
               <Limite titre="Chiffrer une clause non chiffrée.">
-                La MACIF se réserve le droit de limiter les versements sur son fonds en euros sans
+                La Macif se réserve le droit de limiter les versements sur son fonds en euros sans
                 publier de seuil. C’est une réserve affichée, pas un plafond inventé.
               </Limite>
               <Limite titre="Prétendre que les taux durent.">
-                Un taux unique est reconduit sur tout l’horizon. Aucun fonds en euros n’a servi le
-                même taux deux ans de suite.
+                Un taux unique est reconduit sur tout l’horizon. Aucun assureur ne s’engage sur le
+                taux de l’année suivante, et plusieurs de ces fonds ont déjà varié d’un demi-point
+                d’une année sur l’autre.
               </Limite>
               <Limite titre="Projeter en pouvoir d’achat.">
                 Toute la projection est en{' '}
