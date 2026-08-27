@@ -12,7 +12,7 @@ import {
   type SourceTaux,
 } from '../lib/assuranceVie';
 import { CONTRATS } from '../lib/contrats';
-import { LIBELLES_FOYER, type Foyer } from '../lib/fiscalite';
+import { LIBELLES_FOYER, TMI, type Foyer, type TauxMarginal } from '../lib/fiscalite';
 import { ABATTEMENT_757B, ABATTEMENT_990I, AGE_PIVOT } from '../lib/succession';
 import { CLASSES, LIBELLES_CLASSES, RENDEMENT_BRUT, type ClasseActif } from '../lib/supports';
 import { annees, eur, points, taux } from '../lib/format';
@@ -240,6 +240,31 @@ export function Saisie({
                 label: LIBELLES_FOYER[f],
               }))}
               hint="Décide de l’abattement annuel après huit ans : 4 600 € ou 9 200 €."
+            />
+
+            {/* A bracket list and not a checkbox. "Intégrer à l'impôt sur le
+                revenu" reads as "and therefore pay nothing", which is true in
+                one bracket out of five: past eight years the flat rate is
+                7,5 %, so the option costs more from 11 % upwards. Naming the
+                bracket is what makes that visible instead of surprising. */}
+            <Segments<string>
+              label="Imposition de la plus-value"
+              valeur={h.baremeIR === null ? 'forfaitaire' : String(Math.round(h.baremeIR * 100))}
+              onChange={(v) =>
+                onChange('baremeIR', v === 'forfaitaire' ? null : (Number(v) / 100) as TauxMarginal)
+              }
+              options={[
+                { valeur: 'forfaitaire', label: 'Forfaitaire' },
+                ...TMI.map((t) => ({
+                  valeur: String(Math.round(t * 100)),
+                  label: `${Math.round(t * 100)} %`,
+                })),
+              ]}
+              hint={
+                h.baremeIR === null
+                  ? 'Le prélèvement forfaitaire s’applique par défaut : 7,5 % après huit ans sous 150 000 € de primes, 12,8 % sinon. Sélectionnez votre tranche marginale pour chiffrer l’option pour le barème à la place.'
+                  : `Option pour le barème, à votre tranche de ${Math.round(h.baremeIR * 100)} %. Elle remplace le forfaitaire qu’elle vous soit favorable ou non — l’abattement, lui, reste dû. L’option est globale : elle s’applique la même année à tous vos revenus de capitaux mobiliers.`
+              }
             />
 
             <Curseur

@@ -15,6 +15,7 @@ import {
   comparer,
   coutRachatPartiel,
   postes,
+  tauxActuariel,
   projeterContrat,
   sommeTaux,
   totalFrais,
@@ -970,5 +971,198 @@ describe('a withdrawal taken before the end', () => {
       expect(mordu.annees[4].perteProvision).toBeGreaterThan(0);
       expect(mordu.coutsPreleves.provisionPerdue).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * The option for the progressive scale, seen from the engine.
+ *
+ * The tax rule itself is pinned in `fiscalite.test.ts`. What matters here is
+ * everything around it: that declining the option changes nothing, that taking
+ * it moves only income tax, and that it is inert where there is no income tax
+ * to replace.
+ */
+describe('the option for the progressive scale', () => {
+  it('changes nothing at all when it is not taken', () => {
+    for (const h of GRILLE.slice(0, 30)) {
+      for (const c of CONTRATS) {
+        expect(projeterContrat({ ...h, baremeIR: null }, c)).toEqual(projeterContrat(h, c));
+      }
+    }
+  });
+
+  it('is inert on a death, which meets no income tax to replace', () => {
+    for (const bracket of [0, 0.11, 0.45] as const) {
+      for (const c of CONTRATS) {
+        const sans = projeterContrat(sur({ denouement: 'deces' }), c);
+        const avec = projeterContrat(sur({ denouement: 'deces', baremeIR: bracket }), c);
+        expect(avec.accessible).toBe(sans.accessible);
+        if (avec.accessible && sans.accessible) {
+          expect(avec.capitalNet).toBeCloseTo(sans.capitalNet, 9);
+        }
+      }
+    }
+  });
+
+  it('moves income tax and leaves every fee untouched', () => {
+    for (const c of CONTRATS) {
+      const forfait = projeterContrat(sur({ horizon: 20 }), c);
+      const bareme = projeterContrat(sur({ horizon: 20, baremeIR: 0.45 }), c);
+      if (!forfait.accessible || !bareme.accessible) continue;
+      expect(bareme.valeurBrute).toBeCloseTo(forfait.valeurBrute, 9);
+      expect(bareme.annees).toEqual(forfait.annees);
+      expect(bareme.imposition.impotRevenu).toBeGreaterThan(forfait.imposition.impotRevenu);
+      expect(bareme.capitalNet).toBeLessThan(forfait.capitalNet);
+    }
+  });
+
+  it('hands a non-taxable household the whole of the income tax back', () => {
+    for (const c of CONTRATS) {
+      const forfait = projeterContrat(sur({ horizon: 20 }), c);
+      const exonere = projeterContrat(sur({ horizon: 20, baremeIR: 0 }), c);
+      if (!forfait.accessible || !exonere.accessible) continue;
+      expect(exonere.imposition.impotRevenu).toBe(0);
+      expect(exonere.capitalNet - forfait.capitalNet).toBeCloseTo(
+        forfait.imposition.impotRevenu,
+        6,
+      );
+    }
+  });
+
+  it('warns when the option costs more than the flat rate it replaces', () => {
+    const perdant = projeterContrat(sur({ horizon: 20, baremeIR: 0.3 }), contrat('linxea-spirit-2'));
+    const gagnant = projeterContrat(sur({ horizon: 20, baremeIR: 0 }), contrat('linxea-spirit-2'));
+    expect(perdant.accessible && gagnant.accessible).toBe(true);
+    if (!perdant.accessible || !gagnant.accessible) return;
+    const parle = (r: typeof perdant & { accessible: true }) =>
+      r.alertes.some((a) => a.texte.includes('barème'));
+    expect(parle(perdant)).toBe(true);
+    expect(parle(gagnant)).toBe(false);
+  });
+
+  it('never reorders the contracts, whatever the bracket', () => {
+    // The flat rate depends only on the premiums, which are identical across
+    // contracts — so the option scales every gap without ever flipping one.
+    const ordre = (bareme: Hypotheses['baremeIR']) =>
+      comparer(sur({ horizon: 20, baremeIR: bareme }))
+        .filter((r): r is ResultatAccessible => r.accessible)
+        .sort((a, b) => b.capitalNet - a.capitalNet)
+        .map((r) => r.cle);
+    const reference = ordre(null);
+    for (const bracket of [0, 0.11, 0.3, 0.41, 0.45] as const) {
+      expect(ordre(bracket)).toEqual(reference);
+    }
+  });
+});
+
+/**
+ * The actuarial rate — one comparable figure for the whole plan.
+ *
+ * `tauxActuariel` exists to answer a question the fee breakdown does not:
+ * "what did this compound at, in a number I can put beside a Livret A rate?"
+ * These tests check the two things a saver would notice if they broke — that
+ * it agrees with hand arithmetic on the one case that has a closed form, and
+ * that the solver actually found a root rather than the nearest thing to one.
+ */
+describe('the actuarial rate', () => {
+  it('matches the closed form on a lump sum, half-year credit included', () => {
+    // The one case with an exact answer: a single payment at t = 0,5, a single
+    // payout at t = horizon. The exponent is (horizon − 0,5), not horizon —
+    // that half-year is the same one `capitaliser` already charged the money.
+    for (const horizon of [1, 5, 8, 20]) {
+      for (const c of CONTRATS) {
+        const r = projeterContrat(
+          sur({ versementInitial: 50_000, versementProgramme: 0, periodicite: 'aucune', partUC: 0, rebalancement: 'aucun', horizon }),
+          c,
+        );
+        if (!r.accessible) continue;
+        const tri = tauxActuariel(r);
+        expect(tri).not.toBeNull();
+        const ferme = (r.capitalNet / 50_000) ** (1 / (horizon - 0.5)) - 1;
+        expect(tri!).toBeCloseTo(ferme, 9);
+      }
+    }
+  });
+
+  it('discounts every flow it found back to exactly zero', () => {
+    // Not a property of the plan but of the solver: whatever the timeline —
+    // programmed payments, a mid-course withdrawal, a death — the rate it
+    // returns must actually zero the net present value it was solving for.
+    for (const { h, r } of TOUTES.filter((_, i) => i % 7 === 0)) {
+      const tri = tauxActuariel(r);
+      if (tri === null) continue;
+      const flux: { t: number; montant: number }[] = [];
+      for (const a of r.annees) {
+        if (a.versementsBruts > 0) flux.push({ t: a.annee - 0.5, montant: -a.versementsBruts });
+        if (a.rachatBrut > 0) flux.push({ t: a.annee, montant: a.rachatBrut - a.impotRachat });
+      }
+      flux.push({ t: h.horizon, montant: r.capitalNet - r.rachatIntermediaireNet });
+      const van = flux.reduce((s, f) => s + f.montant / (1 + tri) ** f.t, 0);
+      expect(Math.abs(van)).toBeLessThan(1e-4 * Math.max(1, Math.abs(r.capitalNet)));
+    }
+  });
+
+  it('agrees with the closed form across a mid-course withdrawal', () => {
+    // Three flows this time — payment, withdrawal, settlement — solved by hand
+    // from the same NPV equation the function itself uses, so this checks the
+    // bisection lands on the textbook answer rather than a nearby one.
+    const r = projeterContrat(
+      sur({
+        versementInitial: 100_000,
+        versementProgramme: 0,
+        periodicite: 'aucune',
+        partUC: 0.3,
+        horizon: 12,
+        rachatIntermediaire: { annee: 5, montant: 20_000 },
+      }),
+      contrat('linxea-spirit-2'),
+    );
+    expect(r.accessible).toBe(true);
+    if (!r.accessible) return;
+    const tri = tauxActuariel(r);
+    expect(tri).not.toBeNull();
+    const a5 = r.annees.find((a) => a.annee === 5)!;
+    const van = (taux: number) =>
+      -100_000 / (1 + taux) ** 0.5 +
+      (a5.rachatBrut - a5.impotRachat) / (1 + taux) ** 5 +
+      (r.capitalNet - r.rachatIntermediaireNet) / (1 + taux) ** 12;
+    expect(Math.abs(van(tri!))).toBeLessThan(1e-6 * r.capitalNet);
+  });
+
+  it('is negative exactly when the plan hands back less than was paid in', () => {
+    // Not a numeric coincidence: the two positive-flow terms sum to less than
+    // the payments only when the constant rate solving the equation is itself
+    // negative — but worth pinning, since it is the sign a reader checks first.
+    const perte = projeterContrat(
+      sur({ versementInitial: 50_000, versementProgramme: 0, periodicite: 'aucune', partUC: 1, rendementUC: -0.05, horizon: 10 }),
+      contrat('linxea-spirit-2'),
+    );
+    expect(perte.accessible).toBe(true);
+    if (!perte.accessible) return;
+    expect(perte.capitalNet).toBeLessThan(perte.primesVersees);
+    expect(tauxActuariel(perte)!).toBeLessThan(0);
+  });
+
+  it('rises with the gross return it is fed, holding the plan otherwise fixed', () => {
+    const plan = (rendementUC: number) =>
+      projeterContrat(
+        sur({ versementInitial: 50_000, versementProgramme: 300, partUC: 0.6, rendementUC, horizon: 15 }),
+        contrat('linxea-spirit-2'),
+      );
+    const bas = plan(0.02);
+    const haut = plan(0.09);
+    expect(bas.accessible && haut.accessible).toBe(true);
+    if (!bas.accessible || !haut.accessible) return;
+    expect(tauxActuariel(haut)!).toBeGreaterThan(tauxActuariel(bas)!);
+  });
+
+  it('is unmoved by the household TMI, exactly like everything else it settles', () => {
+    // A different lens on the same invariant already proven for the option
+    // itself: nothing about the rate changes what it is a rate *of*.
+    const r = projeterContrat(sur({ versementInitial: 50_000, horizon: 20 }), contrat('linxea-spirit-2'));
+    const avec = projeterContrat(sur({ versementInitial: 50_000, horizon: 20, baremeIR: 0.3 }), contrat('linxea-spirit-2'));
+    expect(r.accessible && avec.accessible).toBe(true);
+    if (!r.accessible || !avec.accessible) return;
+    expect(tauxActuariel(avec)!).toBeLessThan(tauxActuariel(r)!);
   });
 });

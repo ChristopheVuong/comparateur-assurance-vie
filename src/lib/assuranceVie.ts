@@ -40,10 +40,13 @@ import {
   ABATTEMENT,
   PRELEVEMENTS_SOCIAUX,
   estFoyer,
+  estTauxMarginal,
   imposer,
   imposerDeces,
+  tauxImpotRevenu,
   type Foyer,
   type Imposition,
+  type TauxMarginal,
 } from './fiscalite';
 import {
   ABATTEMENT_990I,
@@ -181,6 +184,19 @@ export type Hypotheses = {
   rebalancement: Rebalancement;
   /** Decides the €4,600 / €9,200 allowance on withdrawal after eight years. */
   foyer: Foyer;
+  /**
+   * The household's marginal bracket when it opts out of the flat rate, and
+   * `null` when it does not.
+   *
+   * `null` rather than a boolean beside a rate, because zero per cent is a real
+   * bracket — and the one this control mostly exists for. A `optionBareme:
+   * false` next to `tmi: 0` would have two ways to say "no option" and one of
+   * them would be a lie.
+   *
+   * Inert under a death: a settlement to beneficiaries meets no income tax at
+   * all, so there is no flat rate for the scale to replace.
+   */
+  baremeIR: TauxMarginal | null;
   denouement: Denouement;
   /**
    * Age of the assured on the first payment.
@@ -263,6 +279,9 @@ export const DEFAUTS: Hypotheses = {
   sourceTaux: 'derniere-annee',
   rebalancement: 'annuel',
   foyer: 'seul',
+  // The flat rate, because that is what applies unless somebody actively opts
+  // out of it — the default has to be the law's default, not the flattering one.
+  baremeIR: null,
   // The page opens on the question it was built to answer — what does this
   // contract cost to hold — and a death benefit is a different question. It is
   // one click away, not the greeting.
@@ -342,6 +361,7 @@ export function borner(hypotheses: Hypotheses): Hypotheses {
         ? hypotheses.rebalancement
         : 'annuel',
     foyer: estFoyer(hypotheses.foyer) ? hypotheses.foyer : 'seul',
+    baremeIR: estTauxMarginal(hypotheses.baremeIR) ? hypotheses.baremeIR : null,
     denouement: hypotheses.denouement === 'deces' ? 'deces' : 'rachat',
     ageSouscription: Math.round(borne(hypotheses.ageSouscription, BORNES.ageSouscription)),
     beneficiaires: Math.round(borne(hypotheses.beneficiaires, BORNES.beneficiaires)),
@@ -1141,6 +1161,7 @@ export function projeterContrat(
           foyer: h.foyer,
           psDejaPayes: psPayes,
           assiettePSPayee,
+          bareme: h.baremeIR,
         });
         impotRachat = imposition.total;
         couts.fiscalite += impotRachat;
@@ -1287,6 +1308,7 @@ export function projeterContrat(
           foyer: h.foyer,
           psDejaPayes: psPayes,
           assiettePSPayee,
+          bareme: h.baremeIR,
         });
   // `+=` and not `=`: a mid-course withdrawal has already paid tax into this
   // line, and an assignment here would erase it.
@@ -1476,6 +1498,64 @@ export function coutRachatPartiel(
 }
 
 /**
+ * The whole plan, restated as one comparable rate — a saver's own Livret A
+ * figure.
+ *
+ * A plain `(sortie / entrée)^(1/n) − 1` is only honest for a single payment
+ * held untouched to the end: it silently assumes every euro worked the whole
+ * horizon, which a payment made in year fifteen of twenty never did. The fix
+ * is the actuarial rate — the constant yearly return that discounts every
+ * cash flow, at the date it actually happened, to zero. It generalises the
+ * CAGR rather than replacing it: on a lump sum with no mid-course withdrawal
+ * the two coincide exactly, which is what the invariant checks.
+ *
+ * The cash-flow timeline is read off `annees`, not re-derived, so it can never
+ * disagree with what the projection actually credited:
+ *
+ *  - **every payment leaves at mid-year** — `t = année − 0,5` — because that is
+ *    the same half-year convention `capitaliser` already applies to it. Using
+ *    any other date here would report a rate the engine never actually paid.
+ *  - **a mid-course withdrawal arrives net**, at the close of its year, exactly
+ *    as `coûtRachatPartiel` and the settlement already treat it.
+ *  - **the close of the plan arrives at the horizon**, and is `capitalNet`
+ *    *minus* whatever the withdrawal already contributed — `capitalNet`
+ *    counts that cash once, and counting it again here as a second inflow
+ *    would count it twice.
+ *
+ * Solved by bisection rather than a closed form, because there isn't one once
+ * more than two flows are in play. A widely bracketed search is safe here: the
+ * flows change sign exactly once — outgoing payments, then incoming money —
+ * which is the classical condition for the rate to be unique, so there is
+ * exactly one root to find and bisection cannot land on the wrong one.
+ * `null` is returned rather than a number that lies when no root sits in the
+ * bracket at all, which happens only on a pathological plan no real horizon,
+ * rate or fee schedule in this catalogue produces.
+ */
+export function tauxActuariel(r: ResultatAccessible): number | null {
+  const flux: { t: number; montant: number }[] = [];
+  for (const a of r.annees) {
+    if (a.versementsBruts > 0) flux.push({ t: a.annee - 0.5, montant: -a.versementsBruts });
+    if (a.rachatBrut > 0) flux.push({ t: a.annee, montant: a.rachatBrut - a.impotRachat });
+  }
+  const horizon = r.annees.length;
+  flux.push({ t: horizon, montant: r.capitalNet - r.rachatIntermediaireNet });
+  if (flux.every((f) => f.montant === 0)) return null;
+
+  const van = (taux: number) =>
+    flux.reduce((s, f) => s + f.montant / (1 + taux) ** f.t, 0);
+
+  let bas = -0.999;
+  let haut = 50;
+  if (van(bas) <= 0 || van(haut) >= 0) return null;
+  for (let i = 0; i < 100; i++) {
+    const milieu = (bas + haut) / 2;
+    if (van(milieu) > 0) bas = milieu;
+    else haut = milieu;
+  }
+  return (bas + haut) / 2;
+}
+
+/**
  * Warnings that depend on the plan rather than on the contract.
  *
  * None of these sentences belongs in the catalogue: whether an eight-year lock
@@ -1495,6 +1575,24 @@ function alerter(
 ): Alerte[] {
   const alertes: Alerte[] = [];
   const { fonds, support, gainPromotionnel, primes, expiree } = ctx;
+
+  // The trap the bracket selector exists to make visible. Past eight years the
+  // flat rate is 7,5 %, so every bracket from 11 % upwards pays *more* under
+  // the option — and the control that offers it must say so rather than let a
+  // saver discover it in the total.
+  if (h.baremeIR !== null && h.denouement === 'rachat') {
+    const forfaitaire = tauxImpotRevenu(primes, h.horizon);
+    if (h.baremeIR > forfaitaire + 1e-9) {
+      alertes.push({
+        genre: 'contrainte',
+        texte:
+          `À ${Math.round(h.baremeIR * 100)} % de tranche marginale, l’option pour le barème vous ` +
+          `coûte plus que le prélèvement forfaitaire de ` +
+          `${(forfaitaire * 100).toFixed(2).replace('.', ',')} % qu’elle remplace. Elle n’est ` +
+          'gagnante que pour un foyer non imposable — et, avant huit ans, pour la tranche à 11 %.',
+      });
+    }
+  }
 
   const provisionDe = fonds.provisionFidelite;
   if (provisionDe && h.horizon < provisionDe.termeAnnees) {

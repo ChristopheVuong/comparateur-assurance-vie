@@ -61,7 +61,9 @@ export function Methode() {
                 Si le plan se termine par un <strong>rachat</strong>, seule la{' '}
                 <strong>part de plus-value</strong> qu’il contient est taxée : abattement de
                 4 600 € ou 9 200 € après huit ans, puis 7,5 % au prorata des primes sous 150 000 €
-                et 12,8 % au-delà.
+                et 12,8 % au-delà. En choisissant une <strong>tranche marginale</strong>, ce
+                forfaitaire est remplacé par l’option pour le barème — qu’elle vous soit favorable
+                ou non : passé huit ans, elle coûte plus cher dès la tranche à 11 %.
               </Etape>
               <Etape n={8}>
                 S’il se termine par un <strong>décès</strong>, la plus-value ne rencontre{' '}
@@ -111,6 +113,21 @@ export function Methode() {
                 Un seul retrait est modélisé, puis la sortie finale. Chacun reprend l’abattement
                 annuel, mais une sortie étalée sur cinq ou dix ans le reprendrait autant de fois :
                 le chiffre affiché est un plancher, jamais un optimum fiscal.
+              </Limite>
+              <Limite titre="Réduire un plan étalé à un taux annuel naïf.">
+                Le <strong>taux actuariel</strong> affiché à côté du capital net résout un TRI sur
+                les flux datés — chaque versement à mi-année, un retrait éventuel à sa date, la
+                sortie au terme — plutôt que de diviser bêtement le capital net par le versé. Sur
+                un versement unique il coïncide avec le rendement composé exact ; sur un plan
+                étalé, c’est la seule version qui ne prête pas à l’argent versé en année 15 le
+                même temps de travail qu’à celui versé en année 1.
+              </Limite>
+              <Limite titre="Dire si l’option pour le barème est bonne pour vous.">
+                Elle est <strong>globale</strong> : elle s’applique la même année à tous les revenus
+                de capitaux mobiliers du foyer. Le simulateur ne connaît que ce contrat, donc il
+                chiffre ce que l’option fait ici et signale quand elle coûte plus que le
+                forfaitaire — sans jamais choisir à votre place, ni modéliser les 6,8 points de CSG
+                qui deviennent déductibles l’année suivante.
               </Limite>
               <Limite titre="Chiffrer seul les droits dus après 70 ans.">
                 Les primes versées après 70 ans suivent le barème ordinaire des successions, qui

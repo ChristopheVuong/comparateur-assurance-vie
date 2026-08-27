@@ -65,6 +65,16 @@ Avant huit ans : 12,8 % sans abattement. Les prélèvements sociaux (17,2 %) son
 chaque année sur les intérêts du fonds en euros, à la sortie seulement sur les unités de
 compte.
 
+Le forfaitaire peut être remplacé par l'**option pour le barème** en choisissant une
+tranche marginale (0, 11, 30, 41 ou 45 %). Le moteur l'applique qu'elle soit favorable ou
+non, et le signale quand elle ne l'est pas : passé huit ans le forfaitaire est à 7,5 %, donc
+l'option ne gagne qu'à 0 % — dès 11 % elle coûte plus cher. Avant huit ans, où le
+forfaitaire est à 12,8 %, la tranche à 11 % gagne encore. L'abattement, lui, survit à
+l'option : il appartient au régime de l'assurance-vie, pas au taux. Deux choses ne sont pas
+modélisées et sont affichées comme telles — le caractère **global** de l'option (elle vaut
+pour tous les revenus de capitaux mobiliers du foyer, que le simulateur ignore) et les
+6,8 points de CSG qui deviennent déductibles l'année suivante.
+
 **Décès.** La plus-value ne rencontre jamais l'impôt sur le revenu. Restent les
 prélèvements sociaux, puis les droits de succession — sur une règle qui ne dépend pas de
 l'âge du contrat mais de **celui du souscripteur au moment de chaque versement** :
@@ -109,6 +119,22 @@ qui ne compare rien ; la réinvestir serait une prévision.
 
 L'invariant qui rend le reste sûr : **un retrait nul reproduit la projection ordinaire au
 centime près**, sur toute la grille et tous les contrats.
+
+## Un taux comparable à un Livret A
+
+À côté du capital net, un **taux actuariel** — un TRI résolu par bissection sur les flux
+datés : chaque versement à mi-année (la même convention que `capitaliser` applique déjà à la
+croissance), un retrait intermédiaire à sa date, la sortie au terme. Sur un versement unique
+il coïncide exactement avec le rendement composé `(net/versé)^(1/(horizon−0,5))−1` — l'exposant
+compte une demi-année de moins que l'horizon, parce que c'est tout ce que le premier versement
+a réellement eu le temps de faire fructifier dans le modèle. Sur un plan étalé, diviser
+naïvement le capital net par le versé prêterait à l'argent versé en année 15 le même temps de
+travail qu'à celui versé en année 1 : le TRI est la seule version qui ne fait pas cette erreur.
+
+`tauxActuariel` renvoie `null` plutôt qu'un nombre quand aucune racine ne se trouve dans
+l'intervalle de recherche (−99,9 % à 5 000 % annuel) — situation qu'aucun horizon, taux ou
+barème de frais du catalogue ne produit en pratique, mais que le composant n'affiche
+simplement pas si elle survenait.
 
 ## Ce qui est réellement rachetable
 

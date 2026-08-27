@@ -90,13 +90,46 @@ export function assietteRachat(rachat: number, valeur: number, plusValue: number
 }
 
 /**
+ * The marginal income-tax brackets a household can sit in.
+ *
+ * Offered as a closed list rather than a free rate, because these are the only
+ * values that exist: a bracket is not a preference to be tuned, and letting
+ * somebody type 18 % would invite them to invent a household that the tax code
+ * does not have.
+ */
+export const TMI = [0, 0.11, 0.3, 0.41, 0.45] as const;
+
+export type TauxMarginal = (typeof TMI)[number];
+
+export function estTauxMarginal(valeur: unknown): valeur is TauxMarginal {
+  return TMI.includes(valeur as TauxMarginal);
+}
+
+/**
  * The income tax rate actually applied, blended when premiums straddle the
  * €150,000 threshold.
  *
  * Under eight years there is nothing to blend: the ordinary rate applies to the
  * whole gain.
+ *
+ * `bareme` is the household's marginal bracket, taken when it has opted out of
+ * the flat rate — and it is `null`, not zero, when there is no option. Zero is
+ * a real bracket, and the one the whole feature exists for: a household that
+ * owes nothing must be expressible without meaning "no option chosen".
+ *
+ * **The option is not automatically the cheaper of the two.** It replaces the
+ * flat rate whether that helps or hurts, because it does exactly that in real
+ * life: past eight years the flat rate is 7,5 %, so every bracket from 11 %
+ * upwards pays *more* under the option. Silently picking the minimum would turn
+ * a simulator into an optimiser and hide the trap this control exists to make
+ * visible.
  */
-export function tauxImpotRevenu(primes: number, anciennete: number): number {
+export function tauxImpotRevenu(
+  primes: number,
+  anciennete: number,
+  bareme: TauxMarginal | null = null,
+): number {
+  if (bareme !== null) return bareme;
   if (anciennete < ANCIENNETE_FAVORABLE) return TAUX_AVANT_8_ANS;
   if (primes <= 0) return TAUX_APRES_8_ANS;
   const sousLeSeuil = Math.min(SEUIL_PRIMES, primes) / primes;
@@ -161,15 +194,20 @@ export function imposer(args: {
   psDejaPayes: number;
   /** The interest those levies were charged on, gross. Not the levies themselves. */
   assiettePSPayee: number;
+  /** Marginal bracket when the household opted for the scale; `null` under the flat rate. */
+  bareme?: TauxMarginal | null;
 }): Imposition {
   const { rachat, valeur, primes, anciennete, foyer, psDejaPayes, assiettePSPayee } = args;
   const plusValue = valeur - primes;
   const assiette = assietteRachat(rachat, valeur, plusValue);
 
+  // The allowance survives the option: it is a rule of the life-insurance
+  // regime, not a feature of the flat rate, and it applies to a gain taxed on
+  // the scale exactly as it applies to one taxed at 7,5 %.
   const abattement =
     anciennete >= ANCIENNETE_FAVORABLE ? Math.min(ABATTEMENT[foyer], assiette) : 0;
 
-  const tauxApplique = tauxImpotRevenu(primes, anciennete);
+  const tauxApplique = tauxImpotRevenu(primes, anciennete, args.bareme ?? null);
   const impotRevenu = Math.max(0, assiette - abattement) * tauxApplique;
 
   // A settlement figure, and deliberately not prorated by the share withdrawn:
@@ -244,4 +282,10 @@ export const RESERVES_FISCALES: string[] = [
     'de reprendre l’abattement chaque année, et change franchement l’impôt dû.',
   'Les taux retenus sont ceux de 2026. La fiscalité de l’assurance-vie a déjà changé plusieurs ' +
     'fois, et les primes versées avant le 27 septembre 2017 relèvent d’un régime différent, non modélisé.',
+  'L’option pour le barème est **globale** : elle s’applique la même année à tous les revenus de ' +
+    'capitaux mobiliers du foyer — dividendes, intérêts, plus-values de cession. Le simulateur ne ' +
+    'connaît que ce contrat : il chiffre ce que l’option fait ici, jamais si elle est bonne pour vous.',
+  'Sous le barème, 6,8 points de CSG deviennent déductibles du revenu de l’année suivante. Ce ' +
+    'gain n’est pas modélisé : l’option est donc légèrement sous-estimée pour un foyer imposable, ' +
+    'et inchangée pour un foyer non imposable, qui n’a rien à déduire.',
 ];

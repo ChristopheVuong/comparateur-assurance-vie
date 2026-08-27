@@ -74,6 +74,9 @@ export function Comparaison({
                 Frais annuels des UC
               </th>
               <th scope="col" className="whitespace-nowrap px-5 py-3 text-right font-medium">
+                Capital versé
+              </th>
+              <th scope="col" className="whitespace-nowrap px-5 py-3 text-right font-medium">
                 Capital net
               </th>
               <th scope="col" className="px-5 py-3 text-right font-medium">
@@ -149,6 +152,15 @@ export function Comparaison({
                     />
                   </td>
 
+                  {/* Identical on every row — the same plan is priced through
+                      each contract — and shown muted for exactly that reason:
+                      a reader comparing rows should read it once, then read
+                      the varying columns against it, not scan six copies of
+                      the same figure as if it were part of the comparison. */}
+                  <td className="tabular px-5 py-3 text-right align-top text-ink-500">
+                    {eur(r.primesVersees)}
+                  </td>
+
                   <td className="tabular px-5 py-3 text-right align-top font-semibold text-ink-900">
                     {eur(r.capitalNet)}
                   </td>
@@ -172,7 +184,7 @@ export function Comparaison({
                     {!r.accessible && LIBELLES_MOTIF[r.motif]}
                   </span>
                 </th>
-                <td colSpan={3} className="px-5 py-3 text-right align-top text-xs text-ink-300">
+                <td colSpan={4} className="px-5 py-3 text-right align-top text-xs text-ink-300">
                   hors comparaison
                 </td>
               </tr>

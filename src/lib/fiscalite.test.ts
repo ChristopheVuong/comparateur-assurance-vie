@@ -6,7 +6,9 @@ import {
   SEUIL_PRIMES,
   TAUX_APRES_8_ANS,
   TAUX_AVANT_8_ANS,
+  TMI,
   assietteRachat,
+  estTauxMarginal,
   imposer,
   tauxImpotRevenu,
 } from './fiscalite';
@@ -181,5 +183,76 @@ describe('what is owed on a full surrender', () => {
         expect(deja.psDejaPayes + r.prelevementsSociaux).toBeCloseTo(attendu, 6);
       }
     }
+  });
+});
+
+/**
+ * The option for the progressive scale.
+ *
+ * Worth its own block because the interesting property is not that it lowers
+ * the tax — it does not, most of the time. Past eight years the flat rate is
+ * 7,5 %, so every bracket from 11 % upwards is a *loss*, and these pin that the
+ * model says so rather than quietly picking the cheaper of the two.
+ */
+describe('the option for the progressive scale', () => {
+  it('replaces the flat rate by the bracket, whichever is dearer', () => {
+    for (const bracket of TMI) {
+      expect(tauxImpotRevenu(100_000, 20, bracket)).toBe(bracket);
+      expect(tauxImpotRevenu(100_000, 3, bracket)).toBe(bracket);
+    }
+  });
+
+  it('keeps the flat rate when no option is taken, and null is that absence', () => {
+    expect(tauxImpotRevenu(100_000, 20, null)).toBe(TAUX_APRES_8_ANS);
+    expect(tauxImpotRevenu(100_000, 20)).toBe(TAUX_APRES_8_ANS);
+  });
+
+  it('treats a nil bracket as a real bracket, not as no option', () => {
+    // The whole point of the feature: a household owing nothing must be
+    // expressible, and must not be confused with having declined the option.
+    expect(tauxImpotRevenu(100_000, 20, 0)).toBe(0);
+    expect(cas({ bareme: 0 }).impotRevenu).toBe(0);
+    expect(cas({ bareme: 0 }).tauxApplique).toBe(0);
+  });
+
+  it('costs more than the flat rate from the 11 % bracket, past eight years', () => {
+    const forfait = cas({ anciennete: 20 });
+    for (const bracket of TMI.filter((t) => t > TAUX_APRES_8_ANS)) {
+      expect(cas({ anciennete: 20, bareme: bracket }).impotRevenu).toBeGreaterThan(
+        forfait.impotRevenu,
+      );
+    }
+    expect(cas({ anciennete: 20, bareme: 0 }).impotRevenu).toBeLessThan(forfait.impotRevenu);
+  });
+
+  it('still wins at 11 % before eight years, where the flat rate is 12,8 %', () => {
+    const forfait = cas({ anciennete: 5 });
+    expect(cas({ anciennete: 5, bareme: 0.11 }).impotRevenu).toBeLessThan(forfait.impotRevenu);
+    expect(cas({ anciennete: 5, bareme: 0.3 }).impotRevenu).toBeGreaterThan(forfait.impotRevenu);
+  });
+
+  it('leaves the allowance alone, because it belongs to the regime not to the rate', () => {
+    const avec = cas({ anciennete: 20, bareme: 0.3 });
+    expect(avec.abattement).toBeCloseTo(ABATTEMENT.seul, 6);
+    expect(avec.impotRevenu).toBeCloseTo((avec.assiette - ABATTEMENT.seul) * 0.3, 6);
+  });
+
+  it('never touches the social levies, which owe nothing to income tax', () => {
+    const forfait = cas({ anciennete: 20 });
+    for (const bracket of TMI) {
+      expect(cas({ anciennete: 20, bareme: bracket }).prelevementsSociaux).toBeCloseTo(
+        forfait.prelevementsSociaux,
+        9,
+      );
+    }
+  });
+
+  it('recognises the brackets that exist, and only those', () => {
+    for (const bracket of TMI) expect(estTauxMarginal(bracket)).toBe(true);
+    for (const invente of [0.18, 0.5, 1, -0.11, Number.NaN]) {
+      expect(estTauxMarginal(invente)).toBe(false);
+    }
+    expect(estTauxMarginal(null)).toBe(false);
+    expect(estTauxMarginal('0.11')).toBe(false);
   });
 });

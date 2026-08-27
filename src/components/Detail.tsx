@@ -2,6 +2,7 @@ import {
   LIBELLES_GROUPE,
   coutRachatPartiel,
   grouper,
+  tauxActuariel,
   totalFrais,
   type ResultatAccessible,
 } from '../lib/assuranceVie';
@@ -77,6 +78,20 @@ export function Detail({ r }: { r: ResultatAccessible }) {
               : 'Vous récupérez, net d’impôt'
           }
           valeur={eur(r.capitalNet)}
+          // Only where it means what it looks like it means: against zero
+          // versé the ratio is either undefined or an artefact of the ticket
+          // minimum, never a return on anything the reader put in.
+          complement={r.primesVersees > 0 ? taux((r.capitalNet - r.primesVersees) / r.primesVersees) : undefined}
+          // The Livret A comparison: a constant yearly rate, not the total
+          // gain above. `tauxActuariel` is `null` only on a plan no fee
+          // schedule in the catalogue actually produces — nothing is shown
+          // rather than a number that would not mean what it claims.
+          sousLigne={
+            (() => {
+              const tri = tauxActuariel(r);
+              return tri === null ? undefined : `≈ ${taux(tri, 2)} par an, taux actuariel`;
+            })()
+          }
           fort
         />
         <Chiffre
@@ -353,56 +368,116 @@ function Transmission({ r }: { r: ResultatAccessible }) {
 }
 
 /**
- * What could actually be taken out, and what taking it would cost.
+ * What could actually be taken out, year by year — on every contract, not
+ * only the one whose euro fund locks interest away.
  *
- * Rendered only for a contract whose euro fund locks interest away, because
- * anywhere else it would print the same number twice and teach nothing. The
- * illustration is pinned to the last year before the term — the year the
- * reserve is largest and the mistake most expensive — rather than to the
- * horizon, which may sit long after the lock has ended.
+ * A reader comparing six contracts has no way to tell, from the headline
+ * figure alone, which of them is even asking the question: silence reads as
+ * "not relevant here", not as "verified identical". So this section is shown
+ * for every contract, and it says one of two things — never nothing.
+ *
+ *  - **No reserve at all**: one sentence, because a twenty-row table where
+ *    both columns repeat the same number would be noise dressed as rigour.
+ *  - **A reserve exists**: the full year-by-year table, because that is
+ *    exactly the shape of the thing a reader needs to see — not a single
+ *    snapshot, and not a summary that hides the plateau.
  */
 function Liquidite({ r }: { r: ResultatAccessible }) {
   const c = contrat(r.cle);
   const fonds = c.fondsEuros.find((f) => f.cle === r.fondsRetenu);
   const provisionDe = fonds?.provisionFidelite;
-  if (!provisionDe) return null;
+  const anneesAvecReserve = provisionDe
+    ? r.annees.filter((a) => a.provisionFin > SEUIL_EUR_VISIBLE)
+    : [];
+
+  if (!provisionDe || anneesAvecReserve.length === 0) {
+    return (
+      <>
+        <h4 className="mt-8 text-sm font-semibold text-ink-900">
+          Ce que vous pourriez réellement retirer
+        </h4>
+        <p className="mt-1 text-sm leading-relaxed text-ink-600">
+          Ce contrat n’a aucune réserve non rachetable : la valeur affichée est, chaque année,
+          intégralement disponible. Rien n’y distingue le montant du relevé de ce qu’un rachat
+          total libérerait.
+        </p>
+      </>
+    );
+  }
 
   const annee = Math.min(r.annees.length, provisionDe.termeAnnees - 1);
   const a = r.annees.find((x) => x.annee === annee);
-  if (!a || a.provisionFin <= SEUIL_EUR_VISIBLE) return null;
 
   // A round tenth of what is redeemable: big enough to matter, small enough
   // that nobody reads it as advice to empty the policy.
-  const montant = Math.max(1_000, Math.round(a.valeurRachat / 10_000) * 1_000);
-  const rachat = coutRachatPartiel(r, annee, montant);
+  const rachat =
+    a && a.provisionFin > SEUIL_EUR_VISIBLE
+      ? coutRachatPartiel(r, annee, Math.max(1_000, Math.round(a.valeurRachat / 10_000) * 1_000))
+      : null;
 
   return (
     <>
       <h4 className="mt-8 text-sm font-semibold text-ink-900">
         Ce que vous pourriez réellement retirer
       </h4>
-      <dl className="mt-3 space-y-2 text-sm">
-        <Poste terme={`Valeur affichée à la fin de l’année ${annee}`} montant={a.valeurFin} />
-        <Poste terme="Dont réserve de fidélité, non rachetable" montant={a.provisionFin} sourdine />
-        <Poste terme="Donc réellement disponible" montant={a.valeurRachat} ton="jade" />
-      </dl>
-      <div className="mt-4 rounded-xl border border-ambre-100 bg-ambre-50 px-4 py-3">
-        <p className="text-sm leading-relaxed text-ink-700">
-          Retirer <strong className="font-semibold">{eur(rachat.montant)}</strong> cette année-là
-          coûterait <strong className="font-semibold">{eur(rachat.manqueAuTerme)}</strong> de
-          réserve
-          {rachat.prisSurUnites > SEUIL_EUR_VISIBLE
-            ? ` — le rachat est d’abord servi par les unités de compte, qui en absorbent ${eur(rachat.prisSurUnites)} avant que le fonds en euros ne soit touché`
-            : ''}
-          . Solder le fonds au lieu de retirer ce montant en coûterait{' '}
-          <strong className="font-semibold">{eur(rachat.solderCouterait)}</strong>.
-        </p>
-        <p className="mt-2 text-xs leading-relaxed text-ink-600">
-          La réserve est amputée à due proportion de ce qui sort du fonds en euros, jamais en
-          totalité — c’est la sortie complète qui la détruit. L’écart entre les deux est le seul
-          arbitrage qui compte si un besoin d’argent survient avant le terme.
-        </p>
+      <p className="mt-1 text-xs leading-relaxed text-ink-500">
+        Année par année, tant que la réserve de fidélité n’est pas acquise : la valeur du relevé,
+        et ce qu’un rachat total libérerait réellement — la réserve exclue. Les deux
+        colonnes se rejoignent au terme.
+      </p>
+      <div className="mt-3 overflow-x-auto rounded-xl border border-ink-200">
+        <table className="w-full min-w-[28rem] text-sm">
+          <thead>
+            <tr className="border-b border-ink-200 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-400">
+              <th scope="col" className="px-4 py-2 font-medium">
+                Fin d’année
+              </th>
+              <th scope="col" className="px-4 py-2 text-right font-medium">
+                Valeur affichée
+              </th>
+              <th scope="col" className="px-4 py-2 text-right font-medium">
+                Réellement disponible
+              </th>
+              <th scope="col" className="px-4 py-2 text-right font-medium">
+                Écart
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {anneesAvecReserve.map((an) => (
+              <tr key={an.annee} className="border-b border-ink-100 last:border-0">
+                <td className="px-4 py-1.5 text-ink-700">{an.annee}</td>
+                <td className="tabular px-4 py-1.5 text-right text-ink-900">{eur(an.valeurFin)}</td>
+                <td className="tabular px-4 py-1.5 text-right font-medium text-jade-600">
+                  {eur(an.valeurRachat)}
+                </td>
+                <td className="tabular px-4 py-1.5 text-right text-brique-600">
+                  {eur(an.provisionFin)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+      {rachat && (
+        <div className="mt-4 rounded-xl border border-ambre-100 bg-ambre-50 px-4 py-3">
+          <p className="text-sm leading-relaxed text-ink-700">
+            Retirer <strong className="font-semibold">{eur(rachat.montant)}</strong> cette
+            année-là coûterait <strong className="font-semibold">{eur(rachat.manqueAuTerme)}</strong>{' '}
+            de réserve
+            {rachat.prisSurUnites > SEUIL_EUR_VISIBLE
+              ? ` — le rachat est d’abord servi par les unités de compte, qui en absorbent ${eur(rachat.prisSurUnites)} avant que le fonds en euros ne soit touché`
+              : ''}
+            . Solder le fonds au lieu de retirer ce montant en coûterait{' '}
+            <strong className="font-semibold">{eur(rachat.solderCouterait)}</strong>.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-ink-600">
+            La réserve est amputée à due proportion de ce qui sort du fonds en euros, jamais en
+            totalité — c’est la sortie complète qui la détruit. L’écart entre les deux est le seul
+            arbitrage qui compte si un besoin d’argent survient avant le terme.
+          </p>
+        </div>
+      )}
     </>
   );
 }
@@ -440,11 +515,17 @@ function Poste({
 function Chiffre({
   libelle,
   valeur,
+  complement,
+  sousLigne,
   fort = false,
   ton,
 }: {
   libelle: string;
   valeur: string;
+  /** A rate shown beside the amount — the return the amount represents, when one exists. */
+  complement?: string;
+  /** A second rate shown underneath — comparable to an external one, not to this figure's own total. */
+  sousLigne?: string;
   fort?: boolean;
   ton?: 'brique';
 }) {
@@ -456,14 +537,18 @@ function Chiffre({
       ].join(' ')}
     >
       <div className="text-xs text-ink-500">{libelle}</div>
-      <div
-        className={[
-          'tabular mt-1 text-2xl font-semibold',
-          ton === 'brique' ? 'text-brique-600' : fort ? 'text-brand-700' : 'text-ink-900',
-        ].join(' ')}
-      >
-        {valeur}
+      <div className="mt-1 flex items-baseline gap-2">
+        <span
+          className={[
+            'tabular text-2xl font-semibold',
+            ton === 'brique' ? 'text-brique-600' : fort ? 'text-brand-700' : 'text-ink-900',
+          ].join(' ')}
+        >
+          {valeur}
+        </span>
+        {complement && <span className="tabular text-sm font-medium text-ink-500">{complement}</span>}
       </div>
+      {sousLigne && <div className="tabular mt-0.5 text-xs text-ink-500">{sousLigne}</div>}
     </div>
   );
 }

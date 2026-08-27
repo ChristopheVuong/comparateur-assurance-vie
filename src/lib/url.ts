@@ -23,7 +23,7 @@ import {
   type Rebalancement,
   type SourceTaux,
 } from './assuranceVie';
-import { estFoyer } from './fiscalite';
+import { estFoyer, estTauxMarginal, type TauxMarginal } from './fiscalite';
 import { estClasseActif, type ClasseActif } from './supports';
 import { estCleContrat, type CleContrat } from './contrats';
 
@@ -40,6 +40,7 @@ const CLES = {
   sourceTaux: 'taux',
   rebalancement: 'equilibre',
   foyer: 'foyer',
+  bareme: 'tmi',
   denouement: 'fin',
   ageSouscription: 'age',
   beneficiaires: 'benef',
@@ -111,6 +112,9 @@ export function encoderEtat(
   ajouter(CLES.sourceTaux, etat.sourceTaux, defauts.sourceTaux);
   ajouter(CLES.rebalancement, etat.rebalancement, defauts.rebalancement);
   ajouter(CLES.foyer, etat.foyer, defauts.foyer);
+  // Points, like every other rate in the address — and absent entirely under
+  // the flat rate, so a link carrying `tmi` is a link about that decision.
+  if (etat.baremeIR !== null) p.set(CLES.bareme, String(Math.round(etat.baremeIR * 100)));
   ajouter(CLES.denouement, etat.denouement, defauts.denouement);
   // Written only when they can move a figure. Under a withdrawal they are inert,
   // and a link about a withdrawal that carried three succession parameters would
@@ -185,6 +189,12 @@ export function decoderEtat(recherche: string, defauts: Hypotheses = DEFAUTS): H
     foyer: (() => {
       const lu = p.get(CLES.foyer);
       return estFoyer(lu) ? lu : defauts.foyer;
+    })(),
+    baremeIR: (() => {
+      const lu = p.get(CLES.bareme);
+      if (lu === null) return defauts.baremeIR;
+      const fraction = Number(lu.replace(',', '.')) / 100;
+      return estTauxMarginal(fraction) ? (fraction as TauxMarginal) : defauts.baremeIR;
     })(),
     denouement: (p.get(CLES.denouement) ?? defauts.denouement) as Denouement,
     ageSouscription: lireNombre(
